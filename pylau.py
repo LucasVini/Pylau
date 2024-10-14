@@ -23,6 +23,7 @@ import threading
 import sftp  # Importa o arquivo sftp.py
 
 
+
 # Configuração do logger
 logger = logging.getLogger("SFTPServerLogger")
 logger.setLevel(logging.INFO)
@@ -41,9 +42,9 @@ class SFTPServerThread(QThread):
     def run(self):
         try:
             server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
- True)
-            server_socket.bind((self.host, self.port))
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+            server_socket.bind((self.host,
+ self.port))
             server_socket.listen(10)
 
 
@@ -51,16 +52,18 @@ class SFTPServerThread(QThread):
 
             while True:
                 conn, addr = server_socket.accept()
-                # ... (restante do código do sftp.py)
+                # ... (restante do código do sftp.py)  # Replace with the actual implementation from sftp.py
+
         except Exception as e:
             self.logger.error(f"Erro ao iniciar o servidor SFTP: {str(e)}")
-            # Adicionar lógica para lidar com o erro, por exemplo, reiniciar o servidor
+            # Add logic to handle the error, e.g., restart the server or notify the user
+
         finally:
             if server_socket:
                 server_socket.close()
 
     def stop(self):
-        # Implementar lógica para parar o servidor SFTP (se necessário)
+        # Implement logic to stop the SFTP server (if necessary)
         pass
     
 class PortCheckerThread(QThread):
@@ -184,7 +187,7 @@ class AjudaDialog(QDialog):
         ajuda_texto.setPlainText("""
         Bem-vindo ao PyLau (Python Local Access Utillity)
 
-        Este aplicativo permite realizar transferência de arquivos utilizando protocolo FTP e SFTP hospedando servidor localmente.
+        Este aplicativo foi desenvolvido para permitir a transferência de arquivos utilizando protocolo FTP e SFTP hospedando servidor localmente.
 
         Funcionalidades:
         - ✅Iniciar Servidor FTP 
@@ -195,7 +198,7 @@ class AjudaDialog(QDialog):
 
         Obrigado por usar PyLau!
 
-        E lembrem-se de pagar cafézinho para Lucas.
+        Lucas V.
         """)
 
         layout.addWidget(ajuda_texto)
@@ -241,43 +244,42 @@ class RTSPDialog(QDialog):
         }
 
 class RTSPStream(QThread):
-    def __init__(self, rtsp_url, label=None, external_window=None):
+    frame_received = pyqtSignal(QPixmap)  # Sinal para enviar o frame para a janela
+
+    def __init__(self, rtsp_url):
         super().__init__()
         self.rtsp_url = rtsp_url
-        self.label = label
-        self.external_window = external_window
-        self.capture = None
-        self.running = False
-
-    def run(self):
-        self.capture = cv2.VideoCapture(self.rtsp_url)
         self.running = True
 
-        while self.running and self.capture.isOpened():
-            ret, frame = self.capture.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                h, w, ch = frame.shape
-                bytes_per_line = ch * w
-                image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-                pixmap = QPixmap.fromImage(image)
-
-                if self.external_window:
-                    self.external_window.set_video_frame(pixmap)
-                elif self.label:
-                    self.label.setPixmap(pixmap)
-            else:
-                logger.warning("Falha na captura de frame RTSP.")
+    def run(self):
+        cap = cv2.VideoCapture(self.rtsp_url)  # Captura o stream RTSP usando OpenCV
+        if not cap.isOpened():
+            print("Falha ao conectar no stream RTSP.")
+            return
         
-        self.capture.release()
+        while self.running:
+            ret, frame = cap.read()  # Lê o próximo frame do stream
+            if ret:
+                # Converte o frame BGR (padrão do OpenCV) para RGB
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # Converte o frame para QImage
+                height, width, channel = rgb_frame.shape
+                bytes_per_line = 3 * width
+                q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
+                
+                # Converte QImage para QPixmap
+                pixmap = QPixmap.fromImage(q_image)
+                
+                # Emite o sinal com o QPixmap para a interface gráfica
+                self.frame_received.emit(pixmap)
 
     def stop(self):
         self.running = False
-        self.quit()
-        self.wait()
+        self.wait()  # Espera o thread finalizar
 
 class RTSPWindow(QWidget):
-    def __init__(self):
+    def __init__(self, rtsp_stream_thread=None):
         super().__init__()
         self.setWindowTitle("Stream RTSP")
         self.label = QLabel(self)
@@ -285,14 +287,23 @@ class RTSPWindow(QWidget):
         layout.addWidget(self.label)
         self.setLayout(layout)
 
+        # Armazena o thread de stream RTSP na própria janela
+        self.rtsp_stream_thread = rtsp_stream_thread
+
+        # Configura o callback para atualizar o vídeo
+        if self.rtsp_stream_thread:
+            self.rtsp_stream_thread.frame_received.connect(self.set_video_frame)
+
     def set_video_frame(self, pixmap):
         self.label.setPixmap(pixmap)
         self.adjustSize()  # Ajusta o tamanho da janela ao tamanho do vídeo
 
     def closeEvent(self, event):
-        if self.parent().rtsp_stream_thread:
-            self.parent().rtsp_stream_thread.stop()
-        event.accept()
+        # Verifica se o thread de transmissão RTSP existe e está rodando
+        if self.rtsp_stream_thread is not None:
+            self.rtsp_stream_thread.stop()
+        event.accept()  # Fecha a janela normalmente
+
 
 
 ### AQUI FICA A DEFINIÇÃO DA PARTE VISUAL DA JANELA PRINCIPAL
@@ -340,7 +351,7 @@ class Pylau(QWidget):
         self.log_console.setReadOnly(True)
         self.log_console.setStyleSheet("""
             background: transparent;
-            color: black;
+            color: white;
             font-size: 12pt;
             font-family: 'Arial';
             font-weight: bold;
@@ -405,16 +416,11 @@ class Pylau(QWidget):
 
     def iniciar_sftp_server(self):
         if not self.sftp_server_thread:
-            self.sftp_server_thread = SFTPServerThread(logger=self.logger)
-            self.sftp_server_thread.start()
-            self.logger.info("Servidor SFTP iniciado.")
+            # Launch the SFTP server code in a separate process using subprocess
+            import subprocess
 
-    def parar_sftp_server(self):
-        # Implementar a lógica para parar o servidor SFTP
-        if self.sftp_server_thread:
-            self.sftp_server_thread.stop()
-            self.sftp_server_thread = None
-            self.logger.info("Servidor SFTP parado.")
+            # Ensure the sftp.py file is in the same directory as this script
+            sftp_script_path = os.path.join(os.path.dirname(__file__), "sftp.py")
 
     
 
@@ -424,11 +430,30 @@ class Pylau(QWidget):
             config = dialog.get_rtsp_config()
             rtsp_url = f"rtsp://{config['usuario']}:{config['senha']}@{config['ip']}:{config['porta']}/"
 
-            self.rtsp_window = RTSPWindow()
+            # Cria o thread de transmissão RTSP
+            rtsp_stream_thread = RTSPStream(rtsp_url)
+
+            # Cria a janela RTSP e associa o thread à janela
+            self.rtsp_window = RTSPWindow(rtsp_stream_thread=rtsp_stream_thread)
             self.rtsp_window.show()
 
-            self.rtsp_stream_thread = RTSPStream(rtsp_url, external_window=self.rtsp_window)
-            self.rtsp_stream_thread.start()
+            # Inicia o thread de transmissão
+            self.log_console.append('📺Abrindo transmissão')
+            rtsp_stream_thread.start()
+
+
+
+
+    # Método closeEvent ajustado na RTSPWindow
+    def closeEvent(self, event):
+        # Verifica se o thread de transmissão RTSP existe e está rodando
+        if hasattr(self, 'rtsp_stream_thread') and self.rtsp_stream_thread is not None:
+            self.rtsp_stream_thread.stop()  # Para o thread de stream
+            self.rtsp_stream_thread.wait()  # Espera o thread finalizar
+
+        event.accept()  # Fecha a janela normalmente
+
+
 
     def abrir_port_checker_dialog(self):
         dialog = PortCheckerDialog(self)
@@ -445,6 +470,7 @@ class Pylau(QWidget):
         self.port_checker_thread = PortCheckerThread(ip, ports_to_check)
         self.port_checker_thread.scan_finished.connect(self.mostrar_resultado_portas)
         self.port_checker_thread.start()
+        self.log_console.append('🔍Verificando')
 
     def mostrar_resultado_portas(self, resultado):
         self.log_console.append(resultado)

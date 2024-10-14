@@ -5,6 +5,18 @@ import time
 import argparse
 import logging  # Importar o módulo logging
 
+# Função para obter o IP local da máquina
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+    except Exception:
+        local_ip = "127.0.0.1"
+    finally:
+        s.close()
+    return local_ip
+
 # Diretório onde os arquivos recebidos serão armazenados
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECEIVED_DIR = os.path.join(BASE_DIR, 'SFTP_RECEBIDO')
@@ -191,7 +203,9 @@ def start_server(host, port, keyfile, level):
     server_socket.bind((host, port))
     server_socket.listen(10)
 
-    print(f'Servidor SFTP rodando em {host}:{port}')
+    local_ip = get_local_ip()  # Obtém o IP local da máquina
+    print(f'Servidor SFTP rodando em {local_ip}:{port}')
+
 
     while True:
         conn, addr = server_socket.accept()
@@ -213,7 +227,7 @@ def start_server(host, port, keyfile, level):
         while transport.is_active():
             time.sleep(1)
 
-def principal():
+def main():
     parser = argparse.ArgumentParser(description='Start a simple SFTP server.')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind (default: 127.0.0.1)')
     parser.add_argument('--port', type=int, default=3373, help='Port to bind (default: 3373)')
@@ -228,4 +242,4 @@ def principal():
         start_server(args.host, args.port, None, args.level)
 
 if __name__ == '__main__':
-    principal()
+    main()

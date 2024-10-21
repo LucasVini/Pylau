@@ -3,6 +3,8 @@ import sys
 import logging
 import socket
 import cv2
+import subprocess
+import psutil
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
                              QTextEdit, QHBoxLayout, QLabel, QDialog, QFormLayout, QLineEdit, QDialogButtonBox)
 from PyQt5.QtCore import QThread, QTimer, Qt, pyqtSignal
@@ -11,7 +13,7 @@ from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QPlainTextEdit, QDialog
+from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QPlainTextEdit, QDialog, QListWidget
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QLabel
 from PyQt5.QtCore import QThread, pyqtSignal
 import paramiko
@@ -224,8 +226,23 @@ class RTSPDialog(QDialog):
 
         self.layout.addRow("Usuário:", self.usuario)
         self.layout.addRow("Senha:", self.senha)
-        self.layout.addRow("IP:", self.ip)
+
+        # Criar layout horizontal para o campo de IP e botão de varredura
+        ip_layout = QHBoxLayout()
+        ip_layout.addWidget(self.ip)
+
+        # Botão para varredura de IP
+        self.varredura_btn = QPushButton("Varredura", self)
+        self.varredura_btn.clicked.connect(self.abrir_janela_varredura)
+        ip_layout.addWidget(self.varredura_btn)
+
+        self.layout.addRow("IP:", ip_layout)
         self.layout.addRow("Porta:", self.porta)
+
+        # Botão para preencher os campos com valores padrão
+        self.preencher_btn = QPushButton("Auto Preencher", self)
+        self.preencher_btn.clicked.connect(self.preencher_campos)
+        self.layout.addWidget(self.preencher_btn)
 
         # Adicionando o QDialogButtonBox com botões OK e Cancelar
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -235,6 +252,17 @@ class RTSPDialog(QDialog):
 
         self.setLayout(self.layout)
 
+    def preencher_campos(self):
+        """Preenche os campos com valores padrão."""
+        self.usuario.setText("admin")
+        self.senha.setText("@1234567")
+        self.porta.setText("554")
+
+    def abrir_janela_varredura(self):
+        """Abre uma janela para varredura de dispositivos na rede."""
+        self.varredura_window = VarreduraIPWindow(self)
+        self.varredura_window.show()
+
     def get_rtsp_config(self):
         return {
             'usuario': self.usuario.text(),
@@ -242,6 +270,103 @@ class RTSPDialog(QDialog):
             'ip': self.ip.text(),
             'porta': self.porta.text(),
         }
+
+
+class PingThread(QThread):
+    """Thread para realizar a varredura de IPs."""
+    progress = pyqtSignal(str)
+
+    def __init__(self, base_ip):
+        super().__init__()
+        self.base_ip = base_ip  # Recebe o base_ip como parâmetro no construtor
+
+    def run(self):
+        """Varre a rede local em todos os adaptadores de rede."""
+        adaptadores_ips = self.get_adaptadores_ips()
+
+        for base_ip in adaptadores_ips:
+            for i in range(1, 255):  # Verificando IPs no intervalo de 1 a 254
+                ip = base_ip + str(i)
+                try:
+                    resposta = subprocess.run(
+                        ["ping", "-n", "1", "-w", "500", ip], 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE, 
+                        timeout=120
+                    )
+                    if "TTL=" in resposta.stdout.decode('latin1'):  # Resposta positiva
+                        self.progress.emit(ip)
+                except subprocess.TimeoutExpired:
+                    # Se o tempo limite for excedido, passa para o próximo IP
+                    continue
+
+    def get_adaptadores_ips(self):
+        """Obtém os IPs base (ex.: 192.168.1.) de todos os adaptadores de rede."""
+        adaptadores_ips = []  # Inicializa uma lista para armazenar os IPs base
+
+        # Obtém todas as interfaces de rede
+        interfaces = psutil.net_if_addrs()
+
+        for interface in interfaces.values():
+            for addr in interface:
+                if addr.family == socket.AF_INET:  # Verifica se é IPv4
+                    ip_local = addr.address
+                    base_ip = ".".join(ip_local.split(".")[:-1]) + "."  # Extrai o base IP
+                    if base_ip not in adaptadores_ips:
+                        adaptadores_ips.append(base_ip)  # Adiciona o base IP se ainda não estiver na lista
+
+        return adaptadores_ips
+
+class VarreduraIPWindow(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Dispositivos na Rede")
+        self.setGeometry(450, 450, 300, 300)
+
+        self.layout = QVBoxLayout(self)
+
+        self.label = QLabel("Dispositivos conectados na rede:")
+        self.layout.addWidget(self.label)
+
+        # Lista de IPs encontrados
+        self.ip_list_widget = QListWidget(self)
+        self.layout.addWidget(self.ip_list_widget)
+
+        # Botão para realizar a varredura
+        self.scan_button = QPushButton("Iniciar Varredura", self)
+        self.scan_button.clicked.connect(self.iniciar_varredura)
+        self.layout.addWidget(self.scan_button)
+
+        # Adicionando um botão para fechar
+        self.close_button = QPushButton("Fechar", self)
+        self.close_button.clicked.connect(self.close)
+        self.layout.addWidget(self.close_button)
+
+        # Conecta o clique no item da lista com o preenchimento do campo IP
+        self.ip_list_widget.itemClicked.connect(self.selecionar_ip)
+
+    def iniciar_varredura(self):
+        """Inicia a varredura de IPs na rede local."""
+        self.ip_list_widget.clear()
+
+        # Obtém o IP local e varre a rede local
+        ip_local = socket.gethostbyname(socket.gethostname())
+        base_ip = ".".join(ip_local.split(".")[:-1]) + "."
+
+        # Cria e inicia a thread de varredura passando o base_ip
+        self.thread = PingThread(base_ip)
+        self.thread.progress.connect(self.adicionar_ip_na_lista)
+        self.thread.start()
+
+    def adicionar_ip_na_lista(self, ip):
+        """Adiciona um IP à lista de dispositivos encontrados."""
+        self.ip_list_widget.addItem(ip)
+
+    def selecionar_ip(self, item):
+        """Preenche o campo de IP no diálogo principal com o IP selecionado."""
+        ip_selecionado = item.text()
+        self.parent().ip.setText(ip_selecionado)
+        self.close()
 
 class RTSPStream(QThread):
     frame_received = pyqtSignal(QPixmap)  # Sinal para enviar o frame para a janela

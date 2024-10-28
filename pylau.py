@@ -71,6 +71,17 @@ logger.setLevel(logging.INFO)
 formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s", "%Y-%m-%d %H:%M:%S")
 
 
+# Configurando o adaptador ETHERNET
+def get_first_ethernet_ip():
+    """Obtém o IP do primeiro adaptador Ethernet ativo."""
+    for interface, addrs in psutil.net_if_addrs().items():
+        # Procura por interfaces Ethernet (nome geralmente contém "Ethernet" ou "eth")
+        if "Ethernet" in interface or "eth" in interface.lower():
+            for addr in addrs:
+                if addr.family == socket.AF_INET:  # Apenas endereços IPv4
+                    return addr.address
+    return "127.0.0.1"  # Fallback para localhost caso não encontre adaptador Ethernet
+    
 # Classe StubServer para autenticação básica
 class StubServer(paramiko.ServerInterface):
     def check_auth_password(self, username, password):
@@ -654,13 +665,18 @@ class Pylau(QWidget):
     def iniciar_sftp_paramiko_server(self):
         """Inicia ou para o servidor SFTP usando Paramiko."""
         if not self.sftp_running:
+            # Obter o IP do primeiro adaptador Ethernet
+            local_ip = get_first_ethernet_ip()
+            
             # Iniciar o servidor SFTP
-            self.sftp_server_thread = SFTPServerThread(host="0.0.0.0", port=2222)
+            self.sftp_server_thread = SFTPServerThread(host=local_ip, port=2222)
             self.sftp_server_thread.update_status.connect(self.update_status)
             self.sftp_server_thread.start()
+            
+            # Atualizar a interface para refletir o status do servidor
             self.iniciar_sftp_paramiko_button.setText("Parar SFTP")
             self.sftp_running = True
-            self.logger.info("Servidor SFTP iniciado.")
+            self.logger.info(f"Servidor SFTP iniciado no IP {local_ip} na porta 2222.")
         else:
             # Parar o servidor SFTP
             if self.sftp_server_thread:

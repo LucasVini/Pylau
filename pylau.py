@@ -1,31 +1,36 @@
 import os
 import sys
-import time
 import logging
 import socket
-import threading
-import ctypes
-import argparse
-
 import cv2
+import subprocess
 import psutil
-import paramiko
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
+                             QTextEdit, QHBoxLayout, QLabel, QDialog, QFormLayout, QLineEdit, QDialogButtonBox)
+from PyQt5.QtCore import QThread, QTimer, Qt, pyqtSignal
+from PyQt5.QtGui import QMovie, QImage, QPixmap
 from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QPlainTextEdit, QDialog, QListWidget
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QLabel
+from PyQt5.QtCore import QThread, pyqtSignal
+import paramiko
+import socket
+import time
+import argparse
+import threading
+import ctypes
 
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QMovie, QImage, QPixmap, QIcon
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit,
-    QHBoxLayout, QLabel, QDialog, QFormLayout, QLineEdit,
-    QDialogButtonBox, QSystemTrayIcon, QMenu, QAction,
-    QPlainTextEdit, QListWidget
-)
 
 
+# Configuração do logger
+logger = logging.getLogger("SFTPServerLogger")
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s", "%Y-%m-%d %H:%M:%S")
 
-#### Implementação dos efeitos Blur
+### Definindo efeitos Blur
 
 # Estruturas e funções para o efeito blur
 class ACCENTPOLICY(ctypes.Structure):
@@ -56,91 +61,42 @@ def enable_blur_effect(hwnd):
 
     ctypes.windll.user32.SetWindowCompositionAttribute(hwnd, ctypes.byref(data))
 
-
-
-## SFTP
-# Configuração dos diretórios para o SFTP
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RECEIVED_DIR = os.path.join(BASE_DIR, 'SFTP_RECEBIDO')
-if not os.path.exists(RECEIVED_DIR):
-    os.makedirs(RECEIVED_DIR)
-
-# Configuração do logger
-logger = logging.getLogger("SFTPServerLogger")
-logger.setLevel(logging.INFO)
-formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s", "%Y-%m-%d %H:%M:%S")
-
-
-# Configurando o adaptador ETHERNET
-def get_first_ethernet_ip():
-    """Obtém o IP do primeiro adaptador Ethernet ativo."""
-    for interface, addrs in psutil.net_if_addrs().items():
-        # Procura por interfaces Ethernet (nome geralmente contém "Ethernet" ou "eth")
-        if "Ethernet" in interface or "eth" in interface.lower():
-            for addr in addrs:
-                if addr.family == socket.AF_INET:  # Apenas endereços IPv4
-                    return addr.address
-    return "127.0.0.1"  # Fallback para localhost caso não encontre adaptador Ethernet
     
-# Classe StubServer para autenticação básica
-class StubServer(paramiko.ServerInterface):
-    def check_auth_password(self, username, password):
-        if username == "admin" and password == "@1234567":
-            return paramiko.AUTH_SUCCESSFUL
-        return paramiko.AUTH_FAILED
-
-    def check_channel_request(self, kind, chanid):
-        return paramiko.OPEN_SUCCEEDED
-
-# Classe StubSFTPServer para manipulação dos arquivos
-class StubSFTPServer(paramiko.SFTPServerInterface):
-    ROOT = RECEIVED_DIR
-
-    def _realpath(self, path):
-        return os.path.join(self.ROOT, path.lstrip('/'))
-
-    def open(self, path, flags, attr):
-        path = self._realpath(path)
-        try:
-            return open(path, 'wb' if flags & os.O_WRONLY else 'rb')
-        except IOError:
-            return paramiko.SFTP_PERMISSION_DENIED
-
-# Classe para rodar o servidor SFTP em uma thread separada
 class SFTPServerThread(QThread):
-    update_status = pyqtSignal(str)
-
-    def __init__(self, host, port):
+    def __init__(self, host='0.0.0.0', port=3373, keyfile=None, level='INFO', logger=None):
         super().__init__()
         self.host = host
         self.port = port
-        self.running = True
+        self.keyfile = keyfile
+        self.level = level
+        self.logger = logger
 
     def run(self):
-        self.update_status.emit(f"Iniciando servidor SFTP em {self.host}:{self.port}")
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(10)
-        
-        while self.running:
-            conn, _ = server_socket.accept()
-            try:
-                host_key = paramiko.RSAKey.generate(2048)
-                transport = paramiko.Transport(conn)
-                transport.add_server_key(host_key)
-                transport.set_subsystem_handler("sftp", paramiko.SFTPServer, StubSFTPServer)
-                transport.start_server(server=StubServer())
-                while self.running and transport.is_active():
-                    self.sleep(1)
-            except Exception as e:
-                self.update_status.emit(f"Erro no servidor: {e}")
+        try:
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+            server_socket.bind((self.host,
+ self.port))
+            server_socket.listen(10)
 
-        server_socket.close()
-        self.update_status.emit("Servidor SFTP parado.")
+
+            self.logger.info(f"Servidor SFTP aguardando conexões em {self.host}:{self.port}")
+
+            while True:
+                conn, addr = server_socket.accept()
+                # ... (restante do código do sftp.py)  # Replace with the actual implementation from sftp.py
+
+        except Exception as e:
+            self.logger.error(f"Erro ao iniciar o servidor SFTP: {str(e)}")
+            # Add logic to handle the error, e.g., restart the server or notify the user
+
+        finally:
+            if server_socket:
+                server_socket.close()
 
     def stop(self):
-        self.running = False
+        # Implement logic to stop the SFTP server (if necessary)
+        pass
     
 class PortCheckerThread(QThread):
     scan_finished = pyqtSignal(str)
@@ -254,34 +210,45 @@ class AjudaDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Ajuda")
-        self.setGeometry(400, 400, 500, 300)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
 
+        # Layout principal
         layout = QVBoxLayout(self)
+        
+        # Botão de fechar
+        fechar_btn = QPushButton("Fechar", self)
+        fechar_btn.setStyleSheet("background-color: red; color: white; font-weight: bold; border: none;")
+        fechar_btn.clicked.connect(self.close)
 
-        # Criar o QPlainTextEdit antes de aplicar o estilo
+        # Layout para alinhar o botão de fechar à direita
+        top_layout = QHBoxLayout()
+        top_layout.addWidget(fechar_btn, alignment=Qt.AlignRight)
+        layout.addLayout(top_layout)
+
+        # Texto de ajuda
         ajuda_texto = QPlainTextEdit(self)
         ajuda_texto.setReadOnly(True)
-        ajuda_texto.setPlainText("""
-        Bem-vindo ao PyLau (Python Local Access Utility)
-
+        ajuda_texto.setPlainText("""\
+        Bem-vindo ao PyLau (Python Local Access Utillity)
+        
         Este aplicativo foi desenvolvido para permitir a transferência de arquivos utilizando protocolo FTP e SFTP hospedando servidor localmente.
-
+        
         Funcionalidades:
         - ✅Iniciar Servidor FTP 
         - ❗️Iniciar Servidor SFTP: (em desenvolvimento). 
         - ✅Visualização RTSP: Acesse de forma simplificada uma visualização de stream RTSP. 
-
+        
         Se você precisar de mais assistência, consulte a documentação ou entre em contato com Lucas Vinicius de Oliveira.
-
+        
         Obrigado por usar PyLau!
-
+        
         Lucas V.
         """)
-
-        # Definir o fundo transparente e a cor do texto
-        ajuda_texto.setStyleSheet("background: transparent; color: white; font-size: 14px;")
-        layout.addWidget(ajuda_texto)
+        ajuda_texto.setStyleSheet("color: white; background: transparent; font-size: 14px;")
         
+        # Adicionando o texto ao layout principal
+        layout.addWidget(ajuda_texto)
         self.setLayout(layout)
 
     def showEvent(self, event):
@@ -529,36 +496,30 @@ class RTSPWindow(QWidget):
 
 
 
+### AQUI FICA A DEFINIÇÃO DA PARTE VISUAL DA JANELA PRINCIPAL
 class Pylau(QWidget):
     def __init__(self):
+
         super().__init__()
 
-        # Inicialização da interface e configuração do ícone da bandeja
-        self.logger = logging.getLogger("SFTPServerLogger")
-        self.logger.setLevel(logging.INFO)
-        formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s", "%d-%m-%Y %H:%M:%S")
-
-        # Inicializa o logger para o console
-        self.log_console = QTextEdit(self)
-        self.log_console.setReadOnly(True)
-        text_edit_logger = QTextEditLogger(self.log_console)
-        text_edit_logger.setFormatter(formatter)
-        self.logger.addHandler(text_edit_logger)
-
-        self.init_ui()  # Inicializa a interface após configurar o logger
+        self.init_ui()
         self.create_tray_icon()
-
-        # Inicialização das threads
         self.ftp_server_thread = None
         self.sftp_server_thread = None
-        self.sftp_running = False  # Flag para controle do estado do servidor SFTP
         self.rtsp_stream_thread = None
         self.port_checker_thread = None
 
+        # Logger
+        self.logger = logging.getLogger("SFTPServerLogger")
+        self.logger.setLevel(logging.INFO)
+        formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s", "%d-%m-%Y %H:%M:%S")
+        text_edit_logger = QTextEditLogger(self.log_console)
+        text_edit_logger.setFormatter(formatter)
+        self.logger.addHandler(text_edit_logger)
+        
         self.logger.info("Aplicativo PyLau iniciado. 💙\n Registros:")
-    
+
     def init_ui(self):
-        # Configurações da janela principal
         self.setWindowIcon(QIcon('pylau.ico'))
         self.setWindowTitle('PyLau - Python Local Access Utility')
         self.setGeometry(300, 300, 600, 400)
@@ -571,77 +532,58 @@ class Pylau(QWidget):
         self.background_label.setMovie(self.movie)
         self.movie.start()
 
-        # Criação do contêiner de widgets
-        self.foreground_widget = QWidget(self)
-        self.foreground_widget.setGeometry(self.rect())
-        foreground_layout = QVBoxLayout(self.foreground_widget)
-        foreground_layout.setContentsMargins(0, 0, 0, 0)
+        # Layout principal
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # Console de log com fundo sólido e selecinável
+        # Console de log
+        self.log_console = QTextEdit(self)
+        self.log_console.setReadOnly(True)
         self.log_console.setStyleSheet("""
-            background-color: rgba(30, 30, 30, 0);  /* fundo escuro semi-transparente */
+            background: transparent;
             color: white;
             font-size: 12pt;
             font-family: 'Arial';
             font-weight: bold;
-            border: none;
         """)
-        self.log_console.setReadOnly(False)  # Permite a seleção de texto
-        foreground_layout.addWidget(self.log_console)
+        layout.addWidget(self.log_console)
 
         # Adiciona a QLabel para o stream RTSP
         self.rtsp_label = QLabel(self)
-        foreground_layout.addWidget(self.rtsp_label)
+        layout.addWidget(self.rtsp_label)
 
         # Layout dos botões
-        self.init_buttons_layout(foreground_layout)
-
-        self.setLayout(foreground_layout)
-
-    def resizeEvent(self, event):
-        """Redimensiona o fundo do GIF e o contêiner de widgets ao ajustar a janela."""
-        self.background_label.setGeometry(self.rect())
-        self.foreground_widget.setGeometry(self.rect())
-        self.movie.setScaledSize(self.size())
-        super().resizeEvent(event)
-
-
-
-    def init_buttons_layout(self, layout):
-        """Inicializa o layout dos botões na interface."""
         button_layout = QHBoxLayout()
         self.start_ftp_button = QPushButton('👁️‍🗨️ Iniciar Servidor FTP', self)
-        self.iniciar_sftp_paramiko_button = QPushButton('👁️ Iniciar Servidor SFTP', self)
+        self.start_sftp_button = QPushButton('👁️ Iniciar Servidor SFTP', self)
         self.rtsp_button = QPushButton('📹 Configurar RTSP', self)
-        self.check_ports_button = QPushButton('🔍 Checar Portas', self)
+        self.check_ports_button = QPushButton('🔍 Checar Portas', self)  # Novo botão para checar portas
         self.stop_button = QPushButton('⛔ Parar', self)
         self.ajuda_button = QPushButton('❓ Ajuda', self)
-
-        # Conecta os botões às funções correspondentes
-        self.start_ftp_button.clicked.connect(self.iniciar_ftp_server)
-        self.iniciar_sftp_paramiko_button.clicked.connect(self.iniciar_sftp_paramiko_server)
-        self.rtsp_button.clicked.connect(self.configurar_rtsp)
-        self.check_ports_button.clicked.connect(self.abrir_port_checker_dialog)
-        self.stop_button.clicked.connect(self.parar_servidores)
-        self.ajuda_button.clicked.connect(self.mostrar_ajuda)
-
-        # Adiciona os botões ao layout
         button_layout.addWidget(self.start_ftp_button)
-        button_layout.addWidget(self.iniciar_sftp_paramiko_button)
+        button_layout.addWidget(self.start_sftp_button)
         button_layout.addWidget(self.rtsp_button)
         button_layout.addWidget(self.check_ports_button)
         button_layout.addWidget(self.stop_button)
         button_layout.addWidget(self.ajuda_button)
         layout.addLayout(button_layout)
 
+        self.setLayout(layout)
+
+        # Conectar os botões às funções correspondentes
+        self.start_ftp_button.clicked.connect(self.iniciar_ftp_server)
+        self.start_sftp_button.clicked.connect(self.iniciar_sftp_server)  # Conectando corretamente o botão SFTP
+        self.rtsp_button.clicked.connect(self.configurar_rtsp)
+        self.check_ports_button.clicked.connect(self.abrir_port_checker_dialog)
+        self.stop_button.clicked.connect(self.parar_servidores)
+        self.ajuda_button.clicked.connect(self.abrir_ajuda)
+
     def resizeEvent(self, event):
-        """Redimensiona o fundo do GIF ao ajustar a janela."""
         self.background_label.setGeometry(self.rect())
         self.movie.setScaledSize(self.size())
         super().resizeEvent(event)
 
     def create_tray_icon(self):
-        """Cria o ícone na bandeja do sistema."""
         self.tray_icon = QSystemTrayIcon(QIcon('pylau.ico'), self)
         tray_menu = QMenu(self)
 
@@ -657,41 +599,20 @@ class Pylau(QWidget):
         self.tray_icon.show()
 
     def iniciar_ftp_server(self):
-        """Inicia o servidor FTP."""
         if not self.ftp_server_thread:
             self.ftp_server_thread = FTPServerThread()
             self.ftp_server_thread.start()
 
-    def iniciar_sftp_paramiko_server(self):
-        """Inicia ou para o servidor SFTP usando Paramiko."""
-        if not self.sftp_running:
-            # Obter o IP do primeiro adaptador Ethernet
-            local_ip = get_first_ethernet_ip()
-            
-            # Iniciar o servidor SFTP
-            self.sftp_server_thread = SFTPServerThread(host=local_ip, port=2222)
-            self.sftp_server_thread.update_status.connect(self.update_status)
-            self.sftp_server_thread.start()
-            
-            # Atualizar a interface para refletir o status do servidor
-            self.iniciar_sftp_paramiko_button.setText("Parar SFTP")
-            self.sftp_running = True
-            self.logger.info(f"Servidor SFTP iniciado no IP {local_ip} na porta 2222.")
-        else:
-            # Parar o servidor SFTP
-            if self.sftp_server_thread:
-                self.sftp_server_thread.stop()
-                self.sftp_server_thread.wait()  # Espera a thread encerrar
-            self.iniciar_sftp_paramiko_button.setText("Iniciar SFTP")
-            self.sftp_running = False
-            self.logger.info("Servidor SFTP parado.")
 
-    def update_status(self, message):
-        """Atualiza o console de log com mensagens do servidor."""
-        self.log_console.append(message)
+    def iniciar_sftp_server(self):
+        if not self.sftp_server_thread:
+            # Launch the SFTP server code in a separate process using subprocess
+            import subprocess
+
+            # Ensure the sftp.py file is in the same directory as this script
+            sftp_script_path = os.path.join(os.path.dirname(__file__), "sftp.py")
 
     def configurar_rtsp(self):
-        """Configura a transmissão RTSP e a janela correspondente."""
         dialog = RTSPDialog()
         if dialog.exec_() == QDialog.Accepted:
             config = dialog.get_rtsp_config()
@@ -705,11 +626,12 @@ class Pylau(QWidget):
             self.rtsp_window.show()
 
             # Inicia o thread de transmissão
-            self.log_console.append('📺 Abrindo transmissão')
+            self.log_console.append('📺Abrindo transmissão')
             rtsp_stream_thread.start()
 
+    # Método closeEvent ajustado na RTSPWindow
     def closeEvent(self, event):
-        """Lida com o fechamento da janela, parando a transmissão RTSP se necessário."""
+        # Verifica se o thread de transmissão RTSP existe e está rodando
         if hasattr(self, 'rtsp_stream_thread') and self.rtsp_stream_thread is not None:
             self.rtsp_stream_thread.stop()  # Para o thread de stream
             self.rtsp_stream_thread.wait()  # Espera o thread finalizar
@@ -717,7 +639,6 @@ class Pylau(QWidget):
         event.accept()  # Fecha a janela normalmente
 
     def abrir_port_checker_dialog(self):
-        """Abre o diálogo para verificar portas."""
         dialog = PortCheckerDialog(self)
         if dialog.exec_() == QDialog.Accepted:
             ip = dialog.get_ip()
@@ -727,34 +648,37 @@ class Pylau(QWidget):
                 QMessageBox.warning(self, "Erro", "Endereço IP não pode ser vazio!")
 
     def checar_portas(self, ip):
-        """Verifica as portas especificadas no IP fornecido."""
-        ports_to_check = [21, 22, 80, 443, 554, 2222, 37777]  # Lista de portas para verificar
+        ports_to_check = [21, 22, 80, 443, 554, 37777]  # Lista de portas para verificar
 
         self.port_checker_thread = PortCheckerThread(ip, ports_to_check)
         self.port_checker_thread.scan_finished.connect(self.mostrar_resultado_portas)
         self.port_checker_thread.start()
-        self.log_console.append('🔍 Verificando portas...')
+        self.log_console.append('🔍Verificando')
 
     def mostrar_resultado_portas(self, resultado):
-        """Exibe o resultado da verificação das portas."""
         self.log_console.append(resultado)
 
     def parar_servidores(self):
-        """Para os servidores FTP e RTSP se estiverem em execução."""
         if self.ftp_server_thread:
             self.ftp_server_thread.stop()
             self.ftp_server_thread = None
-            self.logger.info("Servidor FTP parado.")
         if self.rtsp_stream_thread:
             self.rtsp_stream_thread.stop()
             self.rtsp_stream_thread = None
-            self.logger.info("Servidor RTSP parado.")
 
-    def mostrar_ajuda(self):
-        """Abre o diálogo de ajuda."""
-        dialog = AjudaDialog()
-        dialog.exec_()
+    # Botão de ajuda
+        ajuda_btn = QPushButton("Ajuda", self)
+        ajuda_btn.clicked.connect(self.abrir_ajuda)
+        
+        layout = QVBoxLayout()
+        layout.addWidget(ajuda_btn)
 
+        central_widget = QWidget()
+        central_widget.setLayout(layout)
+
+    def abrir_ajuda(self):
+        self.ajuda_dialog = AjudaDialog()
+        self.ajuda_dialog.exec_()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

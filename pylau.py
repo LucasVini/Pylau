@@ -13,9 +13,11 @@ from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QPlainTextEdit, QDialog, QListWidget
+from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QPlainTextEdit, QDialog, QListWidget, QInputDialog
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QLabel
 from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import QVBoxLayout, QWidget, QPushButton, QInputDialog, QMessageBox
+
 import paramiko
 import socket
 import time
@@ -558,7 +560,11 @@ class Pylau(QWidget):
         self.start_sftp_button = QPushButton('👁️ Iniciar Servidor SFTP', self)
         self.rtsp_button = QPushButton('📹 Configurar RTSP', self)
         self.check_ports_button = QPushButton('🔍 Checar Portas', self)  # Novo botão para checar portas
+        self.reset_button = QPushButton("⚙️Padrão de Fáb.", self)
+        self.reset_button.clicked.connect(self.reset_dvr)
+        layout.addWidget(self.reset_button)  # Adiciona ao layout
         self.stop_button = QPushButton('⛔ Parar', self)
+
         self.ajuda_button = QPushButton('❓ Ajuda', self)
         button_layout.addWidget(self.start_ftp_button)
         button_layout.addWidget(self.start_sftp_button)
@@ -647,6 +653,93 @@ class Pylau(QWidget):
             else:
                 QMessageBox.warning(self, "Erro", "Endereço IP não pode ser vazio!")
 
+
+    
+    ### AUTOMAÇÃO DE PADRÃO DE FÁBRICA
+
+    def reset_dvr(self):
+        ip, ok_ip = QInputDialog.getText(self, "IP do Alvo", "Digite o IP alvo:")
+        if ok_ip and ip:
+            senha, ok_senha = QInputDialog.getText(self, "Senha do Alvo", "Digite a senha do alvo:")
+            if ok_senha and senha:
+                QMessageBox.information(self, "Iniciado", "O produto será restaurado para o padrão de fábrica.\nDeseja continuar com o processo?")
+                threading.Thread(target=self.run_selenium_script, args=(ip, senha)).start()
+
+    def run_selenium_script(self, ip, senha):
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            import time
+
+            # Inicialize o navegador e use o IP passado
+            driver = webdriver.Chrome()
+            driver.get(f"http://{ip}")
+
+            # Login usando o IP e senha fornecidos
+            username_input = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "ant-input"))
+            )
+            username_input.send_keys("admin")
+            password_input = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Senha']"))
+            )
+            password_input.send_keys(senha)
+
+
+            submit_button = driver.find_element(By.CLASS_NAME, "login-button")
+            submit_button.click()
+
+            # Continuação da sequência de reset, igual ao script que você compartilhou
+
+            try:
+                configuracoes = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//span[text()='Configurações']"))
+                )
+                configuracoes.click()
+                time.sleep(2)
+                
+                    # Depois, localize e clique em "Sistema"
+                reset = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//span[text()='Sistema']"))
+                )
+                reset.click()
+
+                    # Após clicar em "Sistema" e "Padrão"
+                reset_link = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//a[@href='#/index/SysConfig/defaultConfig']"))
+                )
+                reset_link.click()
+
+                            # Aguarda o botão "Padrão de fábrica" ficar clicável e, em seguida, clica nele
+                padrao_fabrica_botao = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'labelText-wrapper') and text()='Padrão de fábrica']"))
+                )
+                padrao_fabrica_botao.click()
+
+                        # Aguarda o botão "OK" ficar clicável e clica nele
+                ok_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'ant-btn-primary') and span[text()='OK']]"))
+                )
+                ok_button.click()
+
+                password_field = driver.find_element(By.XPATH, "//input[@class='ant-input false' and @placeholder='Senha']")
+                password_field.send_keys("adminadmin12345")
+
+                        # Localiza e clica no botão "OK"
+                ok_button = driver.find_element(By.XPATH, "//div[@class='labelText-wrapper labelText undefined' and text()='OK']")
+                ok_button.click()
+
+            except Exception as e:
+                print("Ocorreu um erro:", e)
+
+        except Exception as e:
+            print("Erro ao resetar DVR:", e)
+
+    
+    ###     VERIFICADOR DE PORTAS ABERTAS
+        
     def checar_portas(self, ip):
         ports_to_check = [21, 22, 80, 443, 554, 37777]  # Lista de portas para verificar
 

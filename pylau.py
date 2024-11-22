@@ -671,6 +671,7 @@ class Pylau(QWidget):
             from selenium.webdriver.common.by import By
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
+            from selenium.webdriver.common.action_chains import ActionChains
             import time
 
             # Inicialize o navegador e use o IP passado
@@ -679,57 +680,84 @@ class Pylau(QWidget):
 
             # Login usando o IP e senha fornecidos
             username_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "ant-input"))
+                EC.presence_of_element_located((By.ID, "loginUsername-inputEl"))
             )
             username_input.send_keys("admin")
+            # Localizar o campo de senha e inserir a senha
             password_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Senha']"))
+                EC.presence_of_element_located((By.ID, "loginPassword-inputEl"))
             )
             password_input.send_keys(senha)
 
-
-            submit_button = driver.find_element(By.CLASS_NAME, "login-button")
+            submit_button = driver.find_element(By.ID, "loginButton-btnWrap")
             submit_button.click()
 
-            # Continuação da sequência de reset, igual ao script que você compartilhou
-
+            # Continuação da sequência de reset
             try:
                 configuracoes = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//span[text()='Configurações']"))
+                    EC.presence_of_element_located((By.ID, "button-1045-btnEl"))
                 )
                 configuracoes.click()
                 time.sleep(2)
                 
                     # Depois, localize e clique em "Sistema"
                 reset = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//span[text()='Sistema']"))
+                    EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'SYSTEM') or contains(text(), 'Sistema')]"))
                 )
                 reset.click()
+                time.sleep(2)
 
                     # Após clicar em "Sistema" e "Padrão"
                 reset_link = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//a[@href='#/index/SysConfig/defaultConfig']"))
+                    EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'Default') or contains(text(), 'Padrão') or contains(text(), 'Predeterminado')]"))
                 )
                 reset_link.click()
+                time.sleep(2)
 
-                            # Aguarda o botão "Padrão de fábrica" ficar clicável e, em seguida, clica nele
-                padrao_fabrica_botao = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'labelText-wrapper') and text()='Padrão de fábrica']"))
+                    # Localizar e clicar no botão "Padrão de fábrica"
+                reset_button = None
+                titles = ["Factory Defaults", "Padrão de fábrica", "Estándar de fábrica"]
+
+                for title in titles:
+                    reset_button = driver.execute_script(
+                        f"return document.querySelector(\"a[title='{title}']\")"
+                    )
+                    if reset_button:
+                        driver.execute_script("arguments[0].click();", reset_button)
+                        break
+
+                if not reset_button:
+                    print("Nenhum botão encontrado com os títulos especificados.")
+                time.sleep(2)
+
+                    # Aguarda o botão "Salvar" ficar clicável e clica nele
+                save_button = None
+                titles = ["Save", "Salvar", "Guardar"]
+
+                for title in titles:
+                    # Executa o script para encontrar o botão com o texto "Save"
+                    save_button = driver.execute_script(
+                        f"return document.querySelector('span.x-btn-inner span[t=\"com.Save\"]')"
+                    )
+                    if save_button:
+                        driver.execute_script("arguments[0].click();", save_button)
+                        break
+
+                if not save_button:
+                    print("Nenhum botão 'Save' ou 'Salvar' encontrado.")
+                time.sleep(2)
+
+                # Localiza o campo de senha e preenche com a senha desejada
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "trigger-1628-inputEl"))
                 )
-                padrao_fabrica_botao.click()
 
-                        # Aguarda o botão "OK" ficar clicável e clica nele
-                ok_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'ant-btn-primary') and span[text()='OK']]"))
-                )
-                ok_button.click()
+                # Usa JavaScript para preencher a senha
+                driver.execute_script("document.getElementById('trigger-1628-inputEl').value = '@1234567';")
+                time.sleep(2)
+                
 
-                password_field = driver.find_element(By.XPATH, "//input[@class='ant-input false' and @placeholder='Senha']")
-                password_field.send_keys("adminadmin12345")
 
-                        # Localiza e clica no botão "OK"
-                ok_button = driver.find_element(By.XPATH, "//div[@class='labelText-wrapper labelText undefined' and text()='OK']")
-                ok_button.click()
 
             except Exception as e:
                 print("Ocorreu um erro:", e)

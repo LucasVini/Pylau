@@ -5,18 +5,46 @@ import socket
 import cv2
 import subprocess
 import psutil
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
-                             QTextEdit, QHBoxLayout, QLabel, QDialog, QFormLayout, QLineEdit, QDialogButtonBox)
+from PyQt5.QtWidgets import (
+    QApplication,
+    QWidget,
+    QVBoxLayout,
+    QPushButton,
+    QTextEdit,
+    QHBoxLayout,
+    QLabel,
+    QDialog,
+    QFormLayout,
+    QLineEdit,
+    QDialogButtonBox,
+)
 from PyQt5.QtCore import QThread, QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QMovie, QImage, QPixmap
 from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QPlainTextEdit, QDialog, QListWidget, QInputDialog
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QLabel
+from PyQt5.QtWidgets import (
+    QSystemTrayIcon,
+    QMenu,
+    QAction,
+    QPlainTextEdit,
+    QDialog,
+    QListWidget,
+    QInputDialog,
+)
+from PyQt5.QtWidgets import (
+    QApplication,
+    QWidget,
+    QVBoxLayout,
+    QPushButton,
+    QTextEdit,
+    QLineEdit,
+    QLabel,
+)
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import QVBoxLayout, QWidget, QPushButton, QInputDialog, QMessageBox
+from PyQt5.QtWidgets import QPushButton, QGraphicsBlurEffect
 
 import paramiko
 import socket
@@ -26,12 +54,56 @@ import threading
 import ctypes
 
 
-
 # Configuração do logger
 logger = logging.getLogger("SFTPServerLogger")
 logger.setLevel(logging.INFO)
-formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+formatter = logging.Formatter(
+    "[%(levelname)s %(asctime)s] %(message)s", "%d-%m-%Y %H:%M:%S"
+)
 
+
+# Configurar o logging
+logging.basicConfig(
+    level=logging.DEBUG,  # Exibe todas as mensagens de log (DEBUG, INFO, WARNING, ERROR)
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),  # Exibe logs no console
+    ],
+)
+
+logging.info("O programa iniciou com sucesso.")
+
+
+# Classe base para threads que executam scripts
+class ScriptThread(QThread):
+    def __init__(self, script_name):
+        super().__init__()
+        self.script_name = script_name
+
+    def run(self):
+        # Caminho completo para o script
+        script_path = get_script_path(self.script_name)
+        if script_path:
+            import subprocess
+
+            subprocess.run([sys.executable, script_path], check=True)
+        else:
+            print(f"Erro: Script {self.script_name} não encontrado.")
+
+
+# Função para determinar o caminho dos scripts
+def get_script_path(script_name):
+    # Verifica se o executável está empacotado
+    if getattr(sys, "frozen", False):
+        # Quando empacotado pelo PyInstaller
+        base_path = sys._MEIPASS
+    else:
+        # Durante o desenvolvimento
+        base_path = os.path.dirname(__file__)
+
+    # Retorna o caminho completo do script
+    script_path = os.path.join(base_path, script_name)
+    return script_path if os.path.exists(script_path) else None
 
 
 def resource_path(relative_path):
@@ -45,7 +117,9 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 
+
 ### Definindo efeitos Blur
+
 
 # Estruturas e funções para o efeito blur
 class ACCENTPOLICY(ctypes.Structure):
@@ -53,15 +127,17 @@ class ACCENTPOLICY(ctypes.Structure):
         ("AccentState", ctypes.c_int),
         ("AccentFlags", ctypes.c_int),
         ("GradientColor", ctypes.c_uint),
-        ("AnimationId", ctypes.c_int)
+        ("AnimationId", ctypes.c_int),
     ]
+
 
 class WINDOWCOMPOSITIONATTRIBDATA(ctypes.Structure):
     _fields_ = [
         ("Attribute", ctypes.c_int),
         ("Data", ctypes.POINTER(ACCENTPOLICY)),
-        ("SizeOfData", ctypes.c_size_t)
+        ("SizeOfData", ctypes.c_size_t),
     ]
+
 
 def enable_blur_effect(hwnd):
     accent = ACCENTPOLICY()
@@ -76,43 +152,7 @@ def enable_blur_effect(hwnd):
 
     ctypes.windll.user32.SetWindowCompositionAttribute(hwnd, ctypes.byref(data))
 
-    
-class SFTPServerThread(QThread):
-    def __init__(self, host='0.0.0.0', port=3373, keyfile=None, level='INFO', logger=None):
-        super().__init__()
-        self.host = host
-        self.port = port
-        self.keyfile = keyfile
-        self.level = level
-        self.logger = logger
 
-    def run(self):
-        try:
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
-            server_socket.bind((self.host,
- self.port))
-            server_socket.listen(10)
-
-
-            self.logger.info(f"Servidor SFTP aguardando conexões em {self.host}:{self.port}")
-
-            while True:
-                conn, addr = server_socket.accept()
-                # ... (restante do código do sftp.py)  # Replace with the actual implementation from sftp.py
-
-        except Exception as e:
-            self.logger.error(f"Erro ao iniciar o servidor SFTP: {str(e)}")
-            # Add logic to handle the error, e.g., restart the server or notify the user
-
-        finally:
-            if server_socket:
-                server_socket.close()
-
-    def stop(self):
-        # Implement logic to stop the SFTP server (if necessary)
-        pass
-    
 class PortCheckerThread(QThread):
     scan_finished = pyqtSignal(str)
 
@@ -130,14 +170,17 @@ class PortCheckerThread(QThread):
                     sock.connect((self.ip, port))
                     result += f"✅Porta {port} - <span style='color: green;'>Aberta</span><br>"
                 except (socket.timeout, ConnectionRefusedError):
-                    result += f"❌Porta {port} - <span style='color: red;'>Fechada</span><br>"
-
+                    result += (
+                        f"❌Porta {port} - <span style='color: red;'>Fechada</span><br>"
+                    )
 
         self.scan_finished.emit(result)
+
 
 class PortCheckerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setStyleSheet("background-color: #cdffdc;")  ### COR DA JANELA
         self.setWindowTitle("Checar Portas")
         self.setGeometry(400, 200, 200, 80)
 
@@ -155,7 +198,9 @@ class PortCheckerDialog(QDialog):
         self.cancel_button = QPushButton("Cancelar", self)
         button_layout.addWidget(self.ok_button)
         button_layout.addWidget(self.cancel_button)
-        layout.addLayout(button_layout)  # Adicionar o layout dos botões ao layout principal
+        layout.addLayout(
+            button_layout
+        )  # Adicionar o layout dos botões ao layout principal
 
         # Conexão dos botões
         self.ok_button.clicked.connect(self.accept)
@@ -175,8 +220,16 @@ class QTextEditLogger(logging.Handler):
         msg = self.format(record)
         self.text_edit.append(msg)
 
+
 class FTPServerThread(QThread):
-    def __init__(self, host='0.0.0.0', porta=2222, usuario='admin', senha='@1234567', diretorio='./FTP_RECEBIDO'):
+    def __init__(
+        self,
+        host="0.0.0.0",
+        porta=2222,
+        usuario="admin",
+        senha="@1234567",
+        diretorio="./FTP_RECEBIDO",
+    ):
         super().__init__()
         self.host = host
         self.porta = porta
@@ -193,22 +246,21 @@ class FTPServerThread(QThread):
         self.host = self.get_ipv4_address()
 
         authorizer = DummyAuthorizer()
-        authorizer.add_user(self.usuario, self.senha, self.diretorio, perm='elradfmw')
+        authorizer.add_user(self.usuario, self.senha, self.diretorio, perm="elradfmw")
 
         handler = FTPHandler
         handler.authorizer = authorizer
 
         self.server = FTPServer((self.host, self.porta), handler)
         logger.info(
-    f""">>> <span style="color: white;">Servidor FTP <span style="color: green;">iniciado</span><br>
+            f""">>> <span style="color: white;">Servidor FTP <span style="color: green;">iniciado</span><br>
     ---------------------<br>
     <span style="color: white;">Endereço IP</span> ⟹ <span style="color: green;">{self.host}:<span style="color: white;">{self.porta}</span>, <br><br>
     <span style="color: white;">Utilize o seguinte login no gravador:<br><br>
     <span style="color: white;">Usuário</span>: <span style="color: green;">{self.usuario}</span>,<br>
     <span style="color: white;">Senha</span>: <span style="color: green;">{self.senha}</span>,<br>
     <span style="color: white;">pid</span> = <span style="color: white;">{os.getpid()}</span> <<<"""
-    )
-
+        )
 
         self.server.serve_forever()
 
@@ -217,7 +269,6 @@ class FTPServerThread(QThread):
             self.server.close_all()
             logger.info("Servidor FTP <span style='color: red;'>parado</span>")
             self.quit()
-
 
     @staticmethod
     def get_ipv4_address():
@@ -232,6 +283,7 @@ class FTPServerThread(QThread):
             s.close()
         return ip_address
 
+
 class AjudaDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -241,10 +293,12 @@ class AjudaDialog(QDialog):
 
         # Layout principal
         layout = QVBoxLayout(self)
-        
+
         # Botão de fechar
         fechar_btn = QPushButton("Fechar", self)
-        fechar_btn.setStyleSheet("background-color: red; color: white; font-weight: bold; border: none;")
+        fechar_btn.setStyleSheet(
+            "background-color: red; color: white; font-weight: bold; border: none;"
+        )
         fechar_btn.clicked.connect(self.close)
 
         # Layout para alinhar o botão de fechar à direita
@@ -255,7 +309,8 @@ class AjudaDialog(QDialog):
         # Texto de ajuda
         ajuda_texto = QPlainTextEdit(self)
         ajuda_texto.setReadOnly(True)
-        ajuda_texto.setPlainText("""\
+        ajuda_texto.setPlainText(
+            """\
         Bem-vindo ao PyLau - Python Local Access Utillity - beta (0.9)
         
         Este aplicativo foi desenvolvido inicialmente para permitir a transferência de arquivos utilizando protocolo FTP e SFTP hospedando servidor localmente.
@@ -280,9 +335,12 @@ class AjudaDialog(QDialog):
         a liberdade de mudar o software de acordo com suas necessidades,
         a liberdade de compartilhar o software com seus amigos e vizinhos e
         a liberdade de compartilhar as mudanças que você faz.
-        """)
-        ajuda_texto.setStyleSheet("color: white; background: transparent; font-size: 14px;")
-        
+        """
+        )
+        ajuda_texto.setStyleSheet(
+            "color: white; background: transparent; font-size: 14px;"
+        )
+
         # Adicionando o texto ao layout principal
         layout.addWidget(ajuda_texto)
         self.setLayout(layout)
@@ -297,7 +355,7 @@ class AjudaDialog(QDialog):
 
         hwnd = int(self.winId())  # Ativa o efeito de blur
         enable_blur_effect(hwnd)
-    
+
     # Adicionar funcionalidade de arraste da janela
     def mousePressEvent(self, event):
         self.oldPos = event.globalPos()
@@ -307,11 +365,13 @@ class AjudaDialog(QDialog):
         self.move(self.x() + delta.x(), self.y() + delta.y())
         self.oldPos = event.globalPos()
 
+
 class RTSPDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Configuração RTSP")
         self.setGeometry(400, 400, 300, 200)
+        self.setStyleSheet("background-color: #cdffdc;")  ### COR DA JANELA
 
         self.layout = QFormLayout(self)
         self.usuario = QLineEdit(self)
@@ -346,9 +406,15 @@ class RTSPDialog(QDialog):
         self.layout.addWidget(self.preencher_btn)
 
         # Adicionando o QDialogButtonBox com botões OK e Cancelar
-        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.button_box.accepted.connect(self.accept)  # Conectar o botão OK para aceitar o diálogo
-        self.button_box.rejected.connect(self.reject)  # Conectar o botão Cancelar para rejeitar o diálogo
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        self.button_box.accepted.connect(
+            self.accept
+        )  # Conectar o botão OK para aceitar o diálogo
+        self.button_box.rejected.connect(
+            self.reject
+        )  # Conectar o botão Cancelar para rejeitar o diálogo
         self.layout.addWidget(self.button_box)
 
         self.setLayout(self.layout)
@@ -366,15 +432,16 @@ class RTSPDialog(QDialog):
 
     def get_rtsp_config(self):
         return {
-            'usuario': self.usuario.text(),
-            'senha': self.senha.text(),
-            'ip': self.ip.text(),
-            'porta': self.porta.text(),
+            "usuario": self.usuario.text(),
+            "senha": self.senha.text(),
+            "ip": self.ip.text(),
+            "porta": self.porta.text(),
         }
 
 
 class PingThread(QThread):
     """Thread para realizar a varredura de IPs."""
+
     progress = pyqtSignal(str, str)  # Emite o IP e o nome do dispositivo
 
     def __init__(self, base_ip):
@@ -393,9 +460,9 @@ class PingThread(QThread):
                         ["ping", "-n", "1", "-w", "500", ip],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
-                        timeout=120
+                        timeout=120,
                     )
-                    if "TTL=" in resposta.stdout.decode('latin1'):  # Resposta positiva
+                    if "TTL=" in resposta.stdout.decode("latin1"):  # Resposta positiva
                         # Obtém o nome do dispositivo (hostname) associado ao IP
                         try:
                             hostname = socket.gethostbyaddr(ip)[0]
@@ -419,11 +486,16 @@ class PingThread(QThread):
             for addr in interface:
                 if addr.family == socket.AF_INET:  # Verifica se é IPv4
                     ip_local = addr.address
-                    base_ip = ".".join(ip_local.split(".")[:-1]) + "."  # Extrai o base IP
+                    base_ip = (
+                        ".".join(ip_local.split(".")[:-1]) + "."
+                    )  # Extrai o base IP
                     if base_ip not in adaptadores_ips:
-                        adaptadores_ips.append(base_ip)  # Adiciona o base IP se ainda não estiver na lista
+                        adaptadores_ips.append(
+                            base_ip
+                        )  # Adiciona o base IP se ainda não estiver na lista
 
         return adaptadores_ips
+
 
 class VarreduraIPWindow(QDialog):
     def __init__(self, parent=None):
@@ -475,6 +547,8 @@ class VarreduraIPWindow(QDialog):
         ip_selecionado = item.text().split(" - ")[0]
         self.parent().ip.setText(ip_selecionado)
         self.close()
+
+
 class RTSPStream(QThread):
     frame_received = pyqtSignal(QPixmap)  # Sinal para enviar o frame para a janela
 
@@ -488,21 +562,23 @@ class RTSPStream(QThread):
         if not cap.isOpened():
             print("Falha ao conectar no stream RTSP.")
             return
-        
+
         while self.running:
             ret, frame = cap.read()  # Lê o próximo frame do stream
             if ret:
                 # Converte o frame BGR (padrão do OpenCV) para RGB
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
+
                 # Converte o frame para QImage
                 height, width, channel = rgb_frame.shape
                 bytes_per_line = 3 * width
-                q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
-                
+                q_image = QImage(
+                    rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888
+                )
+
                 # Converte QImage para QPixmap
                 pixmap = QPixmap.fromImage(q_image)
-                
+
                 # Emite o sinal com o QPixmap para a interface gráfica
                 self.frame_received.emit(pixmap)
 
@@ -510,10 +586,12 @@ class RTSPStream(QThread):
         self.running = False
         self.wait()  # Espera o thread finalizar
 
+
 class RTSPWindow(QWidget):
     def __init__(self, rtsp_stream_thread=None):
         super().__init__()
         self.setWindowTitle("Stream RTSP")
+        self.setStyleSheet("background-color: #32CD32;")  ### COR DA JANELA
         self.label = QLabel(self)
         layout = QVBoxLayout(self)
         layout.addWidget(self.label)
@@ -536,6 +614,7 @@ class RTSPWindow(QWidget):
             self.rtsp_stream_thread.stop()
         event.accept()  # Fecha a janela normalmente
 
+
 class AlarmThread(QThread):
     def __init__(self, script_path):
         super().__init__()
@@ -543,7 +622,30 @@ class AlarmThread(QThread):
 
     def run(self):
         # Executa o outro script Python
-        subprocess.run(['python', self.script_path], check=True)
+        subprocess.run(["python", self.script_path], check=True)
+
+
+class encontrarThread(QThread):
+    def __init__(self, script_path):
+        super().__init__()
+        self.script_path = script_path
+
+    def run(self):
+        # Executa o outro script Python
+        subprocess.run(["python", self.script_path], check=True)
+
+
+class sftpThread(QThread):
+    def __init__(self, script_path):
+        super().__init__()
+        if hasattr(sys, "_MEIPASS"):
+            self.script_path = os.path.join(sys._MEIPASS, script_path)
+        else:
+            self.script_path = script_path
+
+    def run(self):
+        subprocess.run(["python", self.script_path], check=True)
+
 
 class iaThread(QThread):
     def __init__(self, script_path):
@@ -552,7 +654,8 @@ class iaThread(QThread):
 
     def run(self):
         # Executa o outro script Python
-        subprocess.run(['python', self.script_path], check=True)
+        subprocess.run(["python", self.script_path], check=True)
+
 
 ### AQUI FICA A DEFINIÇÃO DA PARTE VISUAL DA JANELA PRINCIPAL
 class Pylau(QWidget):
@@ -561,7 +664,6 @@ class Pylau(QWidget):
         super().__init__()
 
         self.init_ui()
-        self.create_tray_icon()
         self.ftp_server_thread = None
         self.sftp_server_thread = None
         self.rtsp_stream_thread = None
@@ -571,19 +673,27 @@ class Pylau(QWidget):
         # Logger
         self.logger = logging.getLogger("SFTPServerLogger")
         self.logger.setLevel(logging.INFO)
-        formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s", "%d-%m-%Y %H:%M:%S")
+        formatter = logging.Formatter(
+            "[%(levelname)s %(asctime)s] %(message)s", "%d-%m-%Y %H:%M:%S"
+        )
         text_edit_logger = QTextEditLogger(self.log_console)
         text_edit_logger.setFormatter(formatter)
         self.logger.addHandler(text_edit_logger)
-        
+
         self.logger.info("Aplicativo PyLau iniciado. 💙\n Registros:")
 
     def init_ui(self):
-        self.setWindowIcon(QIcon(resource_path('icone.ico')))
-        self.setWindowTitle('PyLau - Python Local Access Utility')
-        self.tray_icon = QSystemTrayIcon(QIcon(resource_path('icone.ico')), self)
+        self.setWindowIcon(QIcon(resource_path("icone.ico")))
+        self.setWindowTitle("PyLau - Python Local Access Utility")
+        self.tray_icon = QSystemTrayIcon(QIcon(resource_path("icone.ico")), self)
         self.tray_icon.show()
-        self.setGeometry(300, 300, 780, 780)
+        self.setGeometry(100, 100, 800, 600)
+        self.set_green_titlebar()
+
+        # Impedir maximização e redimensionamento
+        self.setFixedSize(600, 600)
+        # self.setWindowFlags(self.windowFlags() & ~Qt.WindowMaximizeButtonHint)
+        # self.setGeometry(300, 300, 780, 780)
 
         # Configurando o fundo com um GIF animado
         self.background_label = QLabel(self)
@@ -601,13 +711,17 @@ class Pylau(QWidget):
         # Console de log
         self.log_console = QTextEdit(self)
         self.log_console.setReadOnly(True)
-        self.log_console.setStyleSheet("""
+        self.log_console.setStyleSheet(
+            """
             background: transparent;
             color: white;
-            font-size: 16pt;
+            font-size: 11pt;
             font-family: 'Impact';
             font-weight: regular;
-        """)
+            selection-background-color: #71ff78; /* Define o fundo branco para o texto selecionado */
+            selection-color: black; /* Define a cor do texto selecionado */
+        """
+        )
         layout.addWidget(self.log_console)
 
         # Adiciona a QLabel para o stream RTSP
@@ -617,26 +731,37 @@ class Pylau(QWidget):
         # Layout para os botões em colunas
         button_layout = QHBoxLayout()
 
+        # Altera aparência do title bar (minimizar fechar)
+        self.setWindowFlags(
+            Qt.Window
+            | Qt.WindowTitleHint
+            | Qt.CustomizeWindowHint
+            | Qt.WindowMinimizeButtonHint
+            | Qt.WindowCloseButtonHint
+        )
+
         # Coluna da esquerda
         left_column_layout = QVBoxLayout()
-        self.start_ftp_button = QPushButton('👁️‍🗨️ Iniciar Servidor FTP', self)
-        self.start_sftp_button = QPushButton('👁️ Iniciar Servidor SFTP', self)
-        self.rtsp_button = QPushButton('📹 RTSP', self)
+        self.start_ftp_button = QPushButton("📁 Iniciar Servidor FTP", self)
+        self.start_sftp_button = QPushButton("🔐 Iniciar Servidor SFTP", self)
+        self.rtsp_button = QPushButton("👀 RTSP", self)
+        self.check_ports_button = QPushButton("🔍 Checar Portas", self)
+        self.reset_button = QPushButton("⚙️Padrão de Fáb.", self)
         left_column_layout.addWidget(self.start_ftp_button)
         left_column_layout.addWidget(self.start_sftp_button)
         left_column_layout.addWidget(self.rtsp_button)
+        left_column_layout.addWidget(self.check_ports_button)
+        left_column_layout.addWidget(self.reset_button)
 
         # Coluna da direita
         right_column_layout = QVBoxLayout()
-        self.check_ports_button = QPushButton('🔍 Checar Portas', self)
-        self.reset_button = QPushButton("⚙️Padrão de Fáb.", self)
-        self.stop_button = QPushButton('⛔ Parar', self)
-        self.ajuda_button = QPushButton('❓ Ajuda', self)
-        self.alarm_button = QPushButton('📢 Alarme', self)
-        self.ia_button = QPushButton('🤖 I.A', self)
+        self.encontrar_button = QPushButton("🎯 Encontrar", self)
+        self.stop_button = QPushButton("⛔ Parar", self)
+        self.ajuda_button = QPushButton("❓ Ajuda", self)
+        self.alarm_button = QPushButton("📢 Alarme", self)
+        self.ia_button = QPushButton("🤖 I.A", self)
 
-        right_column_layout.addWidget(self.check_ports_button)
-        right_column_layout.addWidget(self.reset_button)
+        right_column_layout.addWidget(self.encontrar_button)
         right_column_layout.addWidget(self.stop_button)
         right_column_layout.addWidget(self.alarm_button)
         right_column_layout.addWidget(self.ia_button)
@@ -645,23 +770,37 @@ class Pylau(QWidget):
         # Adiciona transparência aos botões
         button_style = """
             QPushButton {
-                background-color: rgba(0, 0, 0, 204); /* Preto com 80% de opacidade */
+                background-color: rgba(0, 0, 0, 150); /* Preto com 80% de opacidade */
                 color: white;
-                font-size: 14pt;
+                font-size: 11pt;
                 font-weight: bold;
-                border-radius: 8px;
-                padding: 10px;
+                border: 1px solid rgba(133, 196, 120, 255); /* Contorno verde */
+                border-radius: 10px;
+                padding: 5px;
             }
             QPushButton:hover {
-                background-color: rgba(50, 50, 50, 204); /* Leve destaque no hover */
+                background-color: rgba(50, 200, 50, 200); /* Destaque no hover */
             }
         """
+
         for button in [
-            self.start_ftp_button, self.start_sftp_button, self.rtsp_button,
-            self.check_ports_button, self.reset_button, self.stop_button,
-            self.alarm_button, self.ia_button, self.ajuda_button
+            self.start_ftp_button,
+            self.start_sftp_button,
+            self.rtsp_button,
+            self.check_ports_button,
+            self.reset_button,
+            self.stop_button,
+            self.alarm_button,
+            self.ia_button,
+            self.ajuda_button,
+            self.encontrar_button,
         ]:
             button.setStyleSheet(button_style)
+
+            # Adiciona o efeito de blur no botão
+            blur_effect = QGraphicsBlurEffect()
+            blur_effect.setBlurRadius(0)  # Ajuste o raio do blur para o efeito desejado
+            button.setGraphicsEffect(blur_effect)
 
         # Adiciona as colunas ao layout horizontal
         button_layout.addLayout(left_column_layout)
@@ -674,83 +813,78 @@ class Pylau(QWidget):
 
         # Conectar os botões às funções correspondentes
         self.start_ftp_button.clicked.connect(self.iniciar_ftp_server)
-        self.start_sftp_button.clicked.connect(self.start_sftp_server)
+        self.start_sftp_button.clicked.connect(self.sftp)
         self.rtsp_button.clicked.connect(self.configurar_rtsp)
         self.check_ports_button.clicked.connect(self.abrir_port_checker_dialog)
         self.reset_button.clicked.connect(self.reset_dvr)
+        self.encontrar_button.clicked.connect(self.encontrar)
         self.stop_button.clicked.connect(self.parar_servidores)
         self.alarm_button.clicked.connect(self.start_alarm)
         self.ia_button.clicked.connect(self.start_ia)
         self.ajuda_button.clicked.connect(self.abrir_ajuda)
-        def resizeEvent(self, event):
-            self.background_label.setGeometry(self.rect())
-            self.movie.setScaledSize(self.size())
-            super().resizeEvent(event)
+
+    def set_green_titlebar(self):
+        # Obtém o identificador da janela
+        hwnd = int(self.winId())
+
+        # Define as cores da barra de título e texto
+        green_color = 0x014F04  # Verde
+        white_color = 0xFFFFFF  # Branco (cor do texto)
+
+        # Constante para ativar cores personalizadas
+        DWMWA_CAPTION_COLOR = 35
+        DWMWA_TEXT_COLOR = 36
+
+        # Carrega a DLL dwmapi para alterar a aparência da janela
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR,
+            ctypes.byref(ctypes.c_int(green_color)),
+            ctypes.sizeof(ctypes.c_int),
+        )
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TEXT_COLOR,
+            ctypes.byref(ctypes.c_int(white_color)),
+            ctypes.sizeof(ctypes.c_int),
+        )
+
+    def resizeEvent(self, event):
+        self.background_label.setGeometry(self.rect())
+        self.movie.setScaledSize(self.size())
+        super().resizeEvent(event)
 
     def start_alarm(self):
-        # Caminho para o script alarme.py
-        script_path = "alarme.py"
-
-        # Inicia o script em uma thread separada
+        # Caminho relativo ao executável
+        script_path = os.path.join(os.path.dirname(__file__), "alarme.py")
         self.alarm_thread = AlarmThread(script_path)
         self.alarm_thread.start()
 
-    def start_ia(self):
-        # Caminho para o script genia.py
-        script_path = "genia.py"
+    def encontrar(self):
+        script_path = os.path.join(os.path.dirname(__file__), "hunter.py")
+        self.encontrar_thread = encontrarThread(script_path)
+        self.encontrar_thread.start()
 
-        # Inicia o script em uma thread separada
+    def start_ia(self):
+        script_path = os.path.join(os.path.dirname(__file__), "genia.py")
         self.ia_thread = iaThread(script_path)
         self.ia_thread.start()
-
-    def create_tray_icon(self):
-        self.tray_icon = QSystemTrayIcon(QIcon('icone.ico'), self)
-        tray_menu = QMenu(self)
-
-        abrir_acao = QAction("Abrir", self)
-        sair_acao = QAction("Sair", self)
-        tray_menu.addAction(abrir_acao)
-        tray_menu.addAction(sair_acao)
-
-        abrir_acao.triggered.connect(self.show)
-        sair_acao.triggered.connect(self.close)
-
-        self.tray_icon.setContextMenu(tray_menu)
-        self.tray_icon.show()
 
     def iniciar_ftp_server(self):
         if not self.ftp_server_thread:
             self.ftp_server_thread = FTPServerThread()
             self.ftp_server_thread.start()
 
+    def sftp(self):
+        # Defina o caminho para o sftp.py, considerando a execução em ambiente compilado
+        sftp_path = (
+            os.path.join(sys._MEIPASS, "sftp.py")
+            if hasattr(sys, "_MEIPASS")
+            else "sftp.py"
+        )
 
-    def start_sftp_server(self):
-        if not self.sftp_running:
-            self.logger.info("Iniciando o servidor SFTP...")
-            try:
-                self.sftp_server_thread = SFTPServerThread(
-                    host='0.0.0.0', 
-                    port=3373, 
-                    keyfile='id_rsa', 
-                    logger=self.logger
-                )
-                self.sftp_server_thread.start()
-                self.sftp_running = True
-                self.start_sftp_button.setText("👁️ Parar Servidor SFTP")
-                self.logger.info("Servidor SFTP iniciado.")
-            except Exception as e:
-                self.logger.error(f"Erro ao iniciar o servidor SFTP: {str(e)}")
-        else:
-            self.logger.info("Parando o servidor SFTP...")
-            try:
-                if self.sftp_server_thread:
-                    self.sftp_server_thread.terminate()  # Finaliza o thread
-                    self.sftp_server_thread = None
-                self.sftp_running = False
-                self.start_sftp_button.setText("👁️ Iniciar Servidor SFTP")
-                self.logger.info("Servidor SFTP parado.")
-            except Exception as e:
-                self.logger.error(f"Erro ao parar o servidor SFTP: {str(e)}")
+        # Chama o backend do SFTP sem iniciar o QApplication
+        subprocess.run([sys.executable, sftp_path, "backend"], check=True)
 
     def configurar_rtsp(self):
         dialog = RTSPDialog()
@@ -766,13 +900,13 @@ class Pylau(QWidget):
             self.rtsp_window.show()
 
             # Inicia o thread de transmissão
-            self.log_console.append('📺Abrindo transmissão')
+            self.log_console.append("📺Abrindo transmissão")
             rtsp_stream_thread.start()
 
     # Método closeEvent ajustado na RTSPWindow
     def closeEvent(self, event):
         # Verifica se o thread de transmissão RTSP existe e está rodando
-        if hasattr(self, 'rtsp_stream_thread') and self.rtsp_stream_thread is not None:
+        if hasattr(self, "rtsp_stream_thread") and self.rtsp_stream_thread is not None:
             self.rtsp_stream_thread.stop()  # Para o thread de stream
             self.rtsp_stream_thread.wait()  # Espera o thread finalizar
 
@@ -787,17 +921,23 @@ class Pylau(QWidget):
             else:
                 QMessageBox.warning(self, "Erro", "Endereço IP não pode ser vazio!")
 
-
-    
     ### AUTOMAÇÃO DE PADRÃO DE FÁBRICA
 
     def reset_dvr(self):
         ip, ok_ip = QInputDialog.getText(self, "IP do Alvo", "Digite o IP alvo:")
         if ok_ip and ip:
-            senha, ok_senha = QInputDialog.getText(self, "Senha do Alvo", "Digite a senha do alvo:")
+            senha, ok_senha = QInputDialog.getText(
+                self, "Senha do Alvo", "Digite a senha do alvo:"
+            )
             if ok_senha and senha:
-                QMessageBox.information(self, "Iniciado", "O produto será restaurado para o padrão de fábrica.\nDeseja continuar com o processo?")
-                threading.Thread(target=self.run_selenium_script, args=(ip, senha)).start()
+                QMessageBox.information(
+                    self,
+                    "Iniciado",
+                    "O produto será restaurado para o padrão de fábrica.\nDeseja continuar com o processo?",
+                )
+                threading.Thread(
+                    target=self.run_selenium_script, args=(ip, senha)
+                ).start()
 
     def run_selenium_script(self, ip, senha):
         try:
@@ -833,24 +973,38 @@ class Pylau(QWidget):
                 )
                 configuracoes.click()
                 time.sleep(2)
-                
-                    # Depois, localize e clique em "Sistema"
+
+                # Depois, localize e clique em "Sistema"
                 reset = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'SYSTEM') or contains(text(), 'Sistema')]"))
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            "//span[contains(text(), 'SYSTEM') or contains(text(), 'Sistema')]",
+                        )
+                    )
                 )
                 reset.click()
                 time.sleep(2)
 
-                    # Após clicar em "Sistema" e "Padrão"
+                # Após clicar em "Sistema" e "Padrão"
                 reset_link = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'Default') or contains(text(), 'Padrão') or contains(text(), 'Predeterminado')]"))
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            "//span[contains(text(), 'Default') or contains(text(), 'Padrão') or contains(text(), 'Predeterminado')]",
+                        )
+                    )
                 )
                 reset_link.click()
                 time.sleep(2)
 
-                    # Localizar e clicar no botão "Padrão de fábrica"
+                # Localizar e clicar no botão "Padrão de fábrica"
                 reset_button = None
-                titles = ["Factory Defaults", "Padrão de fábrica", "Estándar de fábrica"]
+                titles = [
+                    "Factory Defaults",
+                    "Padrão de fábrica",
+                    "Estándar de fábrica",
+                ]
 
                 for title in titles:
                     reset_button = driver.execute_script(
@@ -864,7 +1018,7 @@ class Pylau(QWidget):
                     print("Nenhum botão encontrado com os títulos especificados.")
                 time.sleep(2)
 
-                    # Aguarda o botão "Salvar" ficar clicável e clica nele
+                # Aguarda o botão "Salvar" ficar clicável e clica nele
                 save_button = None
                 titles = ["Save", "Salvar", "Guardar"]
 
@@ -883,18 +1037,13 @@ class Pylau(QWidget):
 
                 # Localizar o campo de senha pelo tipo do input
                 password_field = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable(
-                        (By.XPATH, "//input[@type='password']")
-                    )
+                    EC.element_to_be_clickable((By.XPATH, "//input[@type='password']"))
                 )
 
                 # Focar no campo e preencher a senha
                 password_field.click()  # Focar no campo
                 password_field.send_keys("@1234567")  # Inserir a senha
                 time.sleep(2)
-                                
-
-
 
             except Exception as e:
                 print("Ocorreu um erro:", e)
@@ -902,16 +1051,15 @@ class Pylau(QWidget):
         except Exception as e:
             print("Erro ao resetar DVR:", e)
 
-    
     ###     VERIFICADOR DE PORTAS ABERTAS
-        
+
     def checar_portas(self, ip):
         ports_to_check = [21, 22, 80, 443, 554, 37777]  # Lista de portas para verificar
 
         self.port_checker_thread = PortCheckerThread(ip, ports_to_check)
         self.port_checker_thread.scan_finished.connect(self.mostrar_resultado_portas)
         self.port_checker_thread.start()
-        self.log_console.append('🔍Verificando')
+        self.log_console.append("🔍Verificando")
 
     def mostrar_resultado_portas(self, resultado):
         self.log_console.append(resultado)
@@ -924,10 +1072,10 @@ class Pylau(QWidget):
             self.rtsp_stream_thread.stop()
             self.rtsp_stream_thread = None
 
-    # Botão de ajuda
+        # Botão de ajuda
         ajuda_btn = QPushButton("Ajuda", self)
         ajuda_btn.clicked.connect(self.abrir_ajuda)
-        
+
         layout = QVBoxLayout()
         layout.addWidget(ajuda_btn)
 
@@ -937,6 +1085,7 @@ class Pylau(QWidget):
     def abrir_ajuda(self):
         self.ajuda_dialog = AjudaDialog()
         self.ajuda_dialog.exec_()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

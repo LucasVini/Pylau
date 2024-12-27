@@ -1,0 +1,2 @@
+# Compilando para .exe
+pyinstaller --onefile --noconsole --debug=all --hidden-import=sftp --hidden-import=Hunter --hidden-import=alarme --hidden-import=threading --hidden-import=logging --hidden-import=paramiko --hidden-import=gc --hidden-import=ctypes --hidden-import=struct --hidden-import=types --hidden-import=NetSDK --icon="icone.ico" --add-data "ativo2.png;." --add-data "icone.ico;." --windowed --add-data "alarme.py;." --add-data "hunter.py;." --add-data "sftp.py;." pylau.py

@@ -53,6 +53,20 @@ import argparse
 import threading
 import ctypes
 
+from PyQt5.QtWidgets import (
+    QMainWindow, QPushButton, QVBoxLayout, QDialog, QRadioButton,
+    QButtonGroup, QLabel, QDialogButtonBox, QWidget
+)
+
+
+import paramiko.kex_group14
+import paramiko.kex_group16
+import paramiko.kex_ecdh_nist
+import paramiko.kex_gss
+import paramiko.packet
+import paramiko.primes
+import paramiko.rsakey
+import paramiko.ecdsakey
 
 # Configuração do logger
 logger = logging.getLogger("SFTPServerLogger")
@@ -231,7 +245,7 @@ class FTPServerThread(QThread):
         diretorio="./FTP_RECEBIDO",
     ):
         super().__init__()
-        self.host = host
+        self.host = host  # Usar o IP passado
         self.porta = porta
         self.usuario = usuario
         self.senha = senha
@@ -242,9 +256,7 @@ class FTPServerThread(QThread):
         if not os.path.exists(self.diretorio):
             os.makedirs(self.diretorio)
 
-        # Descobrir o IPv4 real do host
-        self.host = self.get_ipv4_address()
-
+        # Removido self.get_ipv4_address() para respeitar o IP selecionado
         authorizer = DummyAuthorizer()
         authorizer.add_user(self.usuario, self.senha, self.diretorio, perm="elradfmw")
 
@@ -269,19 +281,6 @@ class FTPServerThread(QThread):
             self.server.close_all()
             logger.info("Servidor FTP <span style='color: red;'>parado</span>")
             self.quit()
-
-    @staticmethod
-    def get_ipv4_address():
-        """Obtém o endereço IPv4 real do host."""
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("8.8.8.8", 80))
-            ip_address = s.getsockname()[0]
-        except Exception:
-            ip_address = "127.0.0.1"
-        finally:
-            s.close()
-        return ip_address
 
 
 class AjudaDialog(QDialog):
@@ -496,6 +495,66 @@ class PingThread(QThread):
 
         return adaptadores_ips
 
+class AdapterSelectionDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected_adapter = None
+        self.init_ui()
+
+    def init_ui(self):
+        
+        self.setWindowTitle("Seleção de Adaptador de Rede")
+        self.resize(300, 200)
+        
+
+        layout = QVBoxLayout(self)
+
+        # Label de instrução
+        instruction_label = QLabel("Selecione um adaptador de rede:")
+        layout.addWidget(instruction_label)
+
+        # Grupo de botões para os adaptadores
+        self.button_group = QButtonGroup(self)
+        self.button_group.setExclusive(True)
+
+        # Obter adaptadores de rede e endereços IP
+        self.populate_adapters(layout)
+
+        # Botão "OK"
+        self.ok_button = QPushButton("OK", self)
+        self.ok_button.clicked.connect(self.confirm_selection)
+        layout.addWidget(self.ok_button)
+
+    def populate_adapters(self, layout):
+        adapters = self.get_network_adapters()
+        if not adapters:
+            error_label = QLabel("Nenhum adaptador de rede disponível.")
+            layout.addWidget(error_label)
+            return
+
+        for idx, (name, ip) in enumerate(adapters.items()):
+            radio_button = QRadioButton(f"{name} - {ip}")
+            self.button_group.addButton(radio_button, id=idx)
+            layout.addWidget(radio_button)
+
+    @staticmethod
+    def get_network_adapters():
+        adapters = {}
+        for interface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family == socket.AF_INET:  # Apenas IPv4
+                    adapters[interface] = addr.address
+        return adapters
+
+    def confirm_selection(self):
+        selected_button = self.button_group.checkedButton()
+        if selected_button:
+            # Extrair apenas o endereço IP selecionado
+            self.selected_adapter = selected_button.text().split(" - ")[1]
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Erro", "Por favor, selecione um adaptador de rede.")
+
 
 class VarreduraIPWindow(QDialog):
     def __init__(self, parent=None):
@@ -687,7 +746,6 @@ class Pylau(QWidget):
         self.setWindowTitle("PyLau - Python Local Access Utility")
         self.tray_icon = QSystemTrayIcon(QIcon(resource_path("icone.ico")), self)
         self.tray_icon.show()
-        self.setGeometry(100, 100, 800, 600)
         self.set_green_titlebar()
 
         # Impedir maximização e redimensionamento
@@ -745,13 +803,17 @@ class Pylau(QWidget):
         self.start_ftp_button = QPushButton("📁 Iniciar Servidor FTP", self)
         self.start_sftp_button = QPushButton("🔐 Iniciar Servidor SFTP", self)
         self.rtsp_button = QPushButton("👀 RTSP", self)
+        self.rtmp_button = QPushButton("▶️ RTMP", self)
         self.check_ports_button = QPushButton("🔍 Checar Portas", self)
+        self.ativar_log_button = QPushButton("📋 Ativar Log", self)
         self.reset_button = QPushButton("⚙️Padrão de Fáb.", self)
         left_column_layout.addWidget(self.start_ftp_button)
         left_column_layout.addWidget(self.start_sftp_button)
         left_column_layout.addWidget(self.rtsp_button)
+        left_column_layout.addWidget(self.rtmp_button)
         left_column_layout.addWidget(self.check_ports_button)
         left_column_layout.addWidget(self.reset_button)
+        left_column_layout.addWidget(self.ativar_log_button)
 
         # Coluna da direita
         right_column_layout = QVBoxLayout()
@@ -759,11 +821,15 @@ class Pylau(QWidget):
         self.stop_button = QPushButton("⛔ Parar", self)
         self.ajuda_button = QPushButton("❓ Ajuda", self)
         self.alarm_button = QPushButton("📢 Alarme", self)
+        self.snmp_button = QPushButton("🩺 SNMP", self)
+        self.time_sync_button = QPushButton("⏱ Time Sync", self)
         self.ia_button = QPushButton("🤖 I.A", self)
 
         right_column_layout.addWidget(self.encontrar_button)
         right_column_layout.addWidget(self.stop_button)
         right_column_layout.addWidget(self.alarm_button)
+        right_column_layout.addWidget(self.time_sync_button)
+        right_column_layout.addWidget(self.snmp_button)
         right_column_layout.addWidget(self.ia_button)
         right_column_layout.addWidget(self.ajuda_button)
 
@@ -787,13 +853,17 @@ class Pylau(QWidget):
             self.start_ftp_button,
             self.start_sftp_button,
             self.rtsp_button,
+            self.rtmp_button,
             self.check_ports_button,
             self.reset_button,
             self.stop_button,
             self.alarm_button,
             self.ia_button,
             self.ajuda_button,
+            self.time_sync_button,
+            self.snmp_button,
             self.encontrar_button,
+            self.ativar_log_button,
         ]:
             button.setStyleSheet(button_style)
 
@@ -871,9 +941,15 @@ class Pylau(QWidget):
         self.ia_thread.start()
 
     def iniciar_ftp_server(self):
-        if not self.ftp_server_thread:
-            self.ftp_server_thread = FTPServerThread()
-            self.ftp_server_thread.start()
+        dialog = AdapterSelectionDialog(self)
+        if dialog.exec_() == QDialog.Accepted and dialog.selected_adapter:
+            ip_selecionado = dialog.selected_adapter
+            logger.info(f"Adaptador de rede selecionado: {ip_selecionado}")
+            if not self.ftp_server_thread:
+                # Usar o IP selecionado ao inicializar o servidor FTP
+                self.ftp_server_thread = FTPServerThread(host=ip_selecionado)
+                self.ftp_server_thread.start()
+                
 
     def sftp(self):
         # Defina o caminho para o sftp.py, considerando a execução em ambiente compilado

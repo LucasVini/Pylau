@@ -68,6 +68,7 @@ import paramiko.primes
 import paramiko.rsakey
 import paramiko.ecdsakey
 
+
 # Configuração do logger
 logger = logging.getLogger("SFTPServerLogger")
 logger.setLevel(logging.INFO)
@@ -717,9 +718,8 @@ class iaThread(QThread):
 
 
 ### AQUI FICA A DEFINIÇÃO DA PARTE VISUAL DA JANELA PRINCIPAL
-class Pylau(QWidget):
+class Pylau(QMainWindow):
     def __init__(self):
-
         super().__init__()
 
         self.init_ui()
@@ -739,7 +739,7 @@ class Pylau(QWidget):
         text_edit_logger.setFormatter(formatter)
         self.logger.addHandler(text_edit_logger)
 
-        self.logger.info("Aplicativo PyLau iniciado. 💙\n Registros:")
+        self.logger.info("Aplicativo PyLau iniciado. 💚\n Registros:")
 
     def init_ui(self):
         self.setWindowIcon(QIcon(resource_path("icone.ico")))
@@ -750,13 +750,11 @@ class Pylau(QWidget):
 
         # Impedir maximização e redimensionamento
         self.setFixedSize(600, 600)
-        # self.setWindowFlags(self.windowFlags() & ~Qt.WindowMaximizeButtonHint)
-        # self.setGeometry(300, 300, 780, 780)
 
         # Configurando o fundo com um GIF animado
         self.background_label = QLabel(self)
         self.background_label.setGeometry(self.rect())
-        gif_path = resource_path("ativo2.png")  # Use o caminho adaptado
+        gif_path = resource_path("ativo2.png")
         self.movie = QMovie(gif_path)
         self.movie.setScaledSize(self.size())
         self.background_label.setMovie(self.movie)
@@ -776,8 +774,8 @@ class Pylau(QWidget):
             font-size: 11pt;
             font-family: 'Impact';
             font-weight: regular;
-            selection-background-color: #71ff78; /* Define o fundo branco para o texto selecionado */
-            selection-color: black; /* Define a cor do texto selecionado */
+            selection-background-color: #71ff78;
+            selection-color: black;
         """
         )
         layout.addWidget(self.log_console)
@@ -836,19 +834,18 @@ class Pylau(QWidget):
         # Adiciona transparência aos botões
         button_style = """
             QPushButton {
-                background-color: rgba(0, 0, 0, 150); /* Preto com 80% de opacidade */
+                background-color: rgba(0, 0, 0, 150); 
                 color: white;
                 font-size: 11pt;
                 font-weight: bold;
-                border: 1px solid rgba(133, 196, 120, 255); /* Contorno verde */
+                border: 1px solid rgba(133, 196, 120, 255);
                 border-radius: 10px;
                 padding: 5px;
             }
             QPushButton:hover {
-                background-color: rgba(50, 200, 50, 200); /* Destaque no hover */
+                background-color: rgba(50, 200, 50, 200);
             }
         """
-
         for button in [
             self.start_ftp_button,
             self.start_sftp_button,
@@ -869,7 +866,7 @@ class Pylau(QWidget):
 
             # Adiciona o efeito de blur no botão
             blur_effect = QGraphicsBlurEffect()
-            blur_effect.setBlurRadius(0)  # Ajuste o raio do blur para o efeito desejado
+            blur_effect.setBlurRadius(0)
             button.setGraphicsEffect(blur_effect)
 
         # Adiciona as colunas ao layout horizontal
@@ -879,7 +876,10 @@ class Pylau(QWidget):
         # Adiciona o layout de botões ao layout principal
         layout.addLayout(button_layout)
 
-        self.setLayout(layout)
+        # Criação de um QWidget central
+        central_widget = QWidget(self)
+        central_widget.setLayout(layout)
+        self.setCentralWidget(central_widget)
 
         # Conectar os botões às funções correspondentes
         self.start_ftp_button.clicked.connect(self.iniciar_ftp_server)
@@ -894,18 +894,13 @@ class Pylau(QWidget):
         self.ajuda_button.clicked.connect(self.abrir_ajuda)
 
     def set_green_titlebar(self):
-        # Obtém o identificador da janela
         hwnd = int(self.winId())
-
-        # Define as cores da barra de título e texto
         green_color = 0x014F04  # Verde
         white_color = 0xFFFFFF  # Branco (cor do texto)
 
-        # Constante para ativar cores personalizadas
         DWMWA_CAPTION_COLOR = 35
         DWMWA_TEXT_COLOR = 36
 
-        # Carrega a DLL dwmapi para alterar a aparência da janela
         ctypes.windll.dwmapi.DwmSetWindowAttribute(
             hwnd,
             DWMWA_CAPTION_COLOR,
@@ -1000,135 +995,60 @@ class Pylau(QWidget):
     ### AUTOMAÇÃO DE PADRÃO DE FÁBRICA
 
     def reset_dvr(self):
-        ip, ok_ip = QInputDialog.getText(self, "IP do Alvo", "Digite o IP alvo:")
+        # Importando Selenium
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+        from PyQt5.QtWidgets import QMessageBox, QInputDialog, QLineEdit
+        from webdriver_manager.chrome import ChromeDriverManager
+        # Diálogo para pedir o IP
+        ip, ok_ip = QInputDialog.getText(self, "Reset DVR", "Digite o IP do DVR:")
+
         if ok_ip and ip:
-            senha, ok_senha = QInputDialog.getText(
-                self, "Senha do Alvo", "Digite a senha do alvo:"
-            )
-            if ok_senha and senha:
-                QMessageBox.information(
-                    self,
-                    "Iniciado",
-                    "O produto será restaurado para o padrão de fábrica.\nDeseja continuar com o processo?",
-                )
-                threading.Thread(
-                    target=self.run_selenium_script, args=(ip, senha)
-                ).start()
+            # Diálogo para pedir o usuário
+            user, ok_user = QInputDialog.getText(self, "Reset DVR", "Digite o usuário do DVR:")
 
-    def run_selenium_script(self, ip, senha):
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-            from selenium.webdriver.common.action_chains import ActionChains
-            import time
+            if ok_user and user:
+                # Diálogo para pedir a senha
+                password, ok_password = QInputDialog.getText(self, "Reset DVR", "Digite a senha do DVR:", QLineEdit.Password)
 
-            # Inicialize o navegador e use o IP passado
-            driver = webdriver.Chrome()
-            driver.get(f"http://{ip}")
+                if ok_password and password:
+                    driver = None  # Inicializando a variável driver
 
-            # Login usando o IP e senha fornecidos
-            username_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "loginUsername-inputEl"))
-            )
-            username_input.send_keys("admin")
-            # Localizar o campo de senha e inserir a senha
-            password_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "loginPassword-inputEl"))
-            )
-            password_input.send_keys(senha)
+                    try:
+                        # URL com as credenciais
+                        url = f"http://{user}:{password}@{ip}/cgi-bin/magicBox.cgi?action=resetSystemEx&type=0"
 
-            submit_button = driver.find_element(By.ID, "loginButton-btnWrap")
-            submit_button.click()
+                        # Configuração do Selenium WebDriver
+                        chrome_options = Options()
+                        chrome_options.add_argument("--headless")
+                        chrome_options.add_argument("--disable-gpu")
+                        chrome_options.add_argument("--no-sandbox")
 
-            # Continuação da sequência de reset
-            try:
-                configuracoes = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "button-1045-btnEl"))
-                )
-                configuracoes.click()
-                time.sleep(2)
+                        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-                # Depois, localize e clique em "Sistema"
-                reset = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located(
-                        (
-                            By.XPATH,
-                            "//span[contains(text(), 'SYSTEM') or contains(text(), 'Sistema')]",
-                        )
-                    )
-                )
-                reset.click()
-                time.sleep(2)
+                        # Acessar o link do DVR com a URL contendo as credenciais
+                        driver.get(url)
 
-                # Após clicar em "Sistema" e "Padrão"
-                reset_link = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located(
-                        (
-                            By.XPATH,
-                            "//span[contains(text(), 'Default') or contains(text(), 'Padrão') or contains(text(), 'Predeterminado')]",
-                        )
-                    )
-                )
-                reset_link.click()
-                time.sleep(2)
+                        # Verificar se o reset foi bem-sucedido
+                        if "OK" in driver.page_source:
+                            QMessageBox.information(self, "Sucesso", f"O DVR com IP {ip} foi resetado com sucesso!")
+                        else:
+                            QMessageBox.warning(self, "Leia:", "Falha ao resetar o DVR. Verifique as credenciais e tente novamente.")
 
-                # Localizar e clicar no botão "Padrão de fábrica"
-                reset_button = None
-                titles = [
-                    "Factory Defaults",
-                    "Padrão de fábrica",
-                    "Estándar de fábrica",
-                ]
+                    except Exception as e:
+                        QMessageBox.critical(self, "Erro", f"Erro ao acessar o DVR: {str(e)}")
+                    finally:
+                        if driver:
+                            driver.quit()
+                else:
+                    QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+            else:
+                QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+        else:
+            QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
 
-                for title in titles:
-                    reset_button = driver.execute_script(
-                        f"return document.querySelector(\"a[title='{title}']\")"
-                    )
-                    if reset_button:
-                        driver.execute_script("arguments[0].click();", reset_button)
-                        break
-
-                if not reset_button:
-                    print("Nenhum botão encontrado com os títulos especificados.")
-                time.sleep(2)
-
-                # Aguarda o botão "Salvar" ficar clicável e clica nele
-                save_button = None
-                titles = ["Save", "Salvar", "Guardar"]
-
-                for title in titles:
-                    # Executa o script para encontrar o botão com o texto "Save"
-                    save_button = driver.execute_script(
-                        f"return document.querySelector('span.x-btn-inner span[t=\"com.Save\"]')"
-                    )
-                    if save_button:
-                        driver.execute_script("arguments[0].click();", save_button)
-                        break
-
-                if not save_button:
-                    print("Nenhum botão 'Save' ou 'Salvar' encontrado.")
-                time.sleep(2)
-
-                # Localizar o campo de senha pelo tipo do input
-                password_field = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//input[@type='password']"))
-                )
-
-                # Focar no campo e preencher a senha
-                password_field.click()  # Focar no campo
-                password_field.send_keys("@1234567")  # Inserir a senha
-                time.sleep(2)
-
-            except Exception as e:
-                print("Ocorreu um erro:", e)
-
-        except Exception as e:
-            print("Erro ao resetar DVR:", e)
-
-    ###     VERIFICADOR DE PORTAS ABERTAS
-
+    # Verificador de portas abertas
     def checar_portas(self, ip):
         ports_to_check = [21, 22, 80, 443, 554, 37777]  # Lista de portas para verificar
 

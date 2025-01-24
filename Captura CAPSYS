@@ -1,0 +1,544 @@
+import sys
+from PyQt5.QtWidgets import QApplication, QMainWindow, QGroupBox, QMenu, QMessageBox
+from PyQt5.QtGui import QPixmap
+
+from NetSDK.NetSDK import NetClient
+from NetSDK.SDK_Enum import EM_LOGIN_SPAC_CAP_TYPE
+from NetSDK.SDK_Struct import *
+from NetSDK.SDK_Callback import fDisConnect, fHaveReConnect, CB_FUNCTYPE
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+from PyQt5.QtWidgets import QMainWindow, QApplication, QMessageBox
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt
+
+import ctypes
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QDateTimeEdit, QSpinBox, QPushButton, QHBoxLayout, QFileDialog
+from PyQt5.QtCore import QDateTime, QTimer
+import time 
+
+from PyQt5.QtWidgets import (
+    QDialog, QVBoxLayout, QLabel, QDateTimeEdit, QSpinBox, QDialogButtonBox
+)
+from PyQt5.QtCore import QDateTime
+from datetime import datetime
+from threading import Timer
+
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import (
+    QSystemTrayIcon,
+    QMenu,
+    QAction,
+    QPlainTextEdit,
+    QDialog,
+    QListWidget,
+    QInputDialog,
+)
+
+from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtCore import QUrl
+
+class AboutDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Sobre")
+        self.setGeometry(100, 100, 650, 300)
+        
+        # Layout da janela
+        layout = QVBoxLayout()
+        
+        # Texto sobre o programa
+        self.text_label = QLabel("""
+            Este programa foi desenvolvido para capturar imagens de gravadores de vídeo via rede.
+            Está licenciado sob a GNU General Public License v3.
+
+            *Os fundamentos da GPL*
+            Ninguém deve ser restrito pelo software que eles usam. Existem quatro liberdades que todos os usuários devem ter:
+
+            a liberdade de usar o software para qualquer finalidade,
+            a liberdade de mudar o software de acordo com suas necessidades,
+            a liberdade de compartilhar o software com seus amigos e vizinhos e
+            a liberdade de compartilhar as mudanças que você faz.
+
+            Autor: Lucas Vinicius de Oliveira
+        """)
+        self.text_label.setWordWrap(True)
+        
+        # Link para a GNU GPL v3
+        self.license_label = QLabel("Licenciado sob a <a href='https://www.gnu.org/licenses/gpl-3.0.html'>GNU GPL v3</a>")
+        self.license_label.setOpenExternalLinks(True)
+        
+        # Botão de fechamento
+        self.close_button = QPushButton("Fechar")
+        self.close_button.clicked.connect(self.close)
+        
+        layout.addWidget(self.text_label)
+        layout.addWidget(self.license_label)
+        layout.addWidget(self.close_button)
+        
+        self.setLayout(layout)
+
+def resource_path(relative_path):
+    """Obter o caminho correto do arquivo, tanto no executável quanto no ambiente de desenvolvimento."""
+    try:
+        # Caminho temporário usado pelo PyInstaller no executável
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # Caminho local usado durante o desenvolvimento
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
+class Ui_MainWindow(object):
+    def setupUi(self, MainWindow):
+        MainWindow.setObjectName("MainWindow")
+        MainWindow.resize(800, 700)  # Ajustei o tamanho para comportar o novo botão
+        self.setFixedSize(800, 700)
+        self.centralwidget = QtWidgets.QWidget(MainWindow)
+        self.centralwidget.setObjectName("centralwidget")
+        self.Login_groupBox = QtWidgets.QGroupBox(self.centralwidget)
+        self.Login_groupBox.setGeometry(QtCore.QRect(10, 10, 681, 101))
+        self.Login_groupBox.setObjectName("Login_groupBox")
+        self.User_lineEdit = QtWidgets.QLineEdit(self.Login_groupBox)
+        self.User_lineEdit.setGeometry(QtCore.QRect(110, 60, 111, 20))
+        self.User_lineEdit.setObjectName("User_lineEdit")
+        self.Pwd_lineEdit = QtWidgets.QLineEdit(self.Login_groupBox)
+        self.Pwd_lineEdit.setGeometry(QtCore.QRect(320, 60, 111, 20))
+        self.Pwd_lineEdit.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.Pwd_lineEdit.setObjectName("Pwd_lineEdit")
+        self.Port_label = QtWidgets.QLabel(self.Login_groupBox)
+        self.Port_label.setGeometry(QtCore.QRect(230, 30, 61, 16))
+        self.Port_label.setObjectName("Port_label")
+        self.IP_label = QtWidgets.QLabel(self.Login_groupBox)
+        self.IP_label.setGeometry(QtCore.QRect(10, 30, 61, 16))
+        self.IP_label.setObjectName("IP_label")
+        self.Port_lineEdit = QtWidgets.QLineEdit(self.Login_groupBox)
+        self.Port_lineEdit.setGeometry(QtCore.QRect(320, 30, 111, 20))
+        self.Port_lineEdit.setObjectName("Port_lineEdit")
+        self.Pwd_label = QtWidgets.QLabel(self.Login_groupBox)
+        self.Pwd_label.setGeometry(QtCore.QRect(230, 60, 91, 16))
+        self.Pwd_label.setObjectName("Pwd_label")
+        self.User_label = QtWidgets.QLabel(self.Login_groupBox)
+        self.User_label.setGeometry(QtCore.QRect(3, 60, 101, 20))
+        self.User_label.setObjectName("User_label")
+        self.IP_lineEdit = QtWidgets.QLineEdit(self.Login_groupBox)
+        self.IP_lineEdit.setGeometry(QtCore.QRect(110, 30, 109, 20))
+        self.IP_lineEdit.setObjectName("IP_lineEdit")
+        self.Login_pushButton = QtWidgets.QPushButton(self.Login_groupBox)
+        self.Login_pushButton.setGeometry(QtCore.QRect(450, 40, 91, 31))
+        self.Login_pushButton.setObjectName("Login_pushButton")
+        self.Logout_pushButton = QtWidgets.QPushButton(self.Login_groupBox)
+        self.Logout_pushButton.setGeometry(QtCore.QRect(560, 40, 91, 31))
+        self.Logout_pushButton.setObjectName("Logout_pushButton")
+        self.Capture_groupBox = QtWidgets.QGroupBox(self.centralwidget)
+        self.Capture_groupBox.setGeometry(QtCore.QRect(10, 130, 781, 481))  # Ajustei para caber o novo botão
+        self.Capture_groupBox.setObjectName("Capture_groupBox")
+        self.Channel_label = QtWidgets.QLabel(self.Capture_groupBox)
+        self.Channel_label.setGeometry(QtCore.QRect(10, 20, 81, 16))
+        self.Channel_label.setObjectName("Channel_label")
+        self.Channel_comboBox = QtWidgets.QComboBox(self.Capture_groupBox)
+        self.Channel_comboBox.setGeometry(QtCore.QRect(100, 20, 69, 22))
+        self.Channel_comboBox.setObjectName("Channel_comboBox")
+        self.Capture_pushButton = QtWidgets.QPushButton(self.Capture_groupBox)
+        self.Capture_pushButton.setGeometry(QtCore.QRect(210, 12, 111, 31))
+        self.Capture_pushButton.setObjectName("Capture_pushButton")
+
+        self.Picture_label = QtWidgets.QLabel(self.Capture_groupBox)
+        self.Picture_label.setGeometry(QtCore.QRect(20, 50, 741, 411))
+        self.Picture_label.setStyleSheet("background-color: rgb(202, 202, 202);")
+        self.Picture_label.setText("")
+        self.Picture_label.setObjectName("Picture_label")
+        MainWindow.setCentralWidget(self.centralwidget)
+        self.menubar = QtWidgets.QMenuBar(MainWindow)
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 800, 23))
+        self.menubar.setObjectName("menubar")
+        MainWindow.setMenuBar(self.menubar)
+        self.statusbar = QtWidgets.QStatusBar(MainWindow)
+        self.statusbar.setObjectName("statusbar")
+        MainWindow.setStatusBar(self.statusbar)
+        self.Switch_action = QtWidgets.QAction(MainWindow)
+        self.Switch_action.setObjectName("Switch_action")
+
+        self.retranslateUi(MainWindow)
+        QtCore.QMetaObject.connectSlotsByName(MainWindow)
+        # Botão de 'Sobre' no rodapé
+        self.about_button = QPushButton("Sobre", self.centralwidget)
+        self.about_button.setGeometry(QtCore.QRect(320, 650, 160, 30))  # Ajuste a posição conforme necessário
+        self.about_button.clicked.connect(self.show_about_dialog)
+
+        MainWindow.setCentralWidget(self.centralwidget)
+        self.menubar = QtWidgets.QMenuBar(MainWindow)
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 800, 23))
+        self.menubar.setObjectName("menubar")
+        MainWindow.setMenuBar(self.menubar)
+        self.statusbar = QtWidgets.QStatusBar(MainWindow)
+        self.statusbar.setObjectName("statusbar")
+        MainWindow.setStatusBar(self.statusbar)
+
+        self.retranslateUi(MainWindow)
+        QtCore.QMetaObject.connectSlotsByName(MainWindow)
+
+    def retranslateUi(self, MainWindow):
+        _translate = QtCore.QCoreApplication.translate
+        MainWindow.setWindowTitle(_translate("MainWindow", "(Capture)-(OffLine)"))
+        # Tradução de outros textos da interface...
+
+    def show_about_dialog(self):
+        about_dialog = AboutDialog()  # Abre a janela "Sobre"
+        about_dialog.exec_()  # Exibe a janela de diálogo
+
+        # Conectando sinais
+
+    def retranslateUi(self, MainWindow):
+        _translate = QtCore.QCoreApplication.translate
+        MainWindow.setWindowTitle(_translate("MainWindow", "(Capture)-(OffLine)"))
+        self.Login_groupBox.setTitle(_translate("MainWindow", "(Credenciais de Acesso)"))
+        self.Port_label.setText(_translate("MainWindow", "(Porta)"))
+        self.IP_label.setText(_translate("MainWindow", "(IP)"))
+        self.Pwd_label.setText(_translate("MainWindow", "(Senha)"))
+        self.User_label.setText(_translate("MainWindow", "(Usuário)"))
+        self.Login_pushButton.setText(_translate("MainWindow", "(Login)"))
+        self.Logout_pushButton.setText(_translate("MainWindow", "(Logout)"))
+        self.Capture_groupBox.setTitle(_translate("MainWindow", "(Captura)"))
+        self.Channel_label.setText(_translate("MainWindow", "(Canal)"))
+
+        self.Switch_action.setText(_translate("MainWindow", ""))
+
+    def open_scheduled_capture_dialog(self):
+        dialog = ScheduledCaptureDialog()
+        dialog.exec_()
+
+        
+@CB_FUNCTYPE(None, C_LLONG, POINTER(c_ubyte), c_uint, c_uint, C_DWORD, C_LDWORD)
+def CaptureCallBack(lLoginID,pBuf,RevLen,EncodeType,CmdSerial,dwUser):
+    if lLoginID == 0:
+        return
+    print('Enter CaptureCallBack')
+    wnd.update_ui(pBuf, RevLen, EncodeType)
+
+class ScheduledCaptureDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Configurar Captura Programada")
+        self.setGeometry(100, 100, 400, 200)
+
+        layout = QVBoxLayout()
+
+        # Widgets para data e hora de início e término
+        self.start_label = QLabel("Data e Hora de Início:")
+        self.start_datetime = QDateTimeEdit(QDateTime.currentDateTime())
+        self.start_datetime.setCalendarPopup(True)
+
+        self.end_label = QLabel("Data e Hora de Término:")
+        self.end_datetime = QDateTimeEdit(QDateTime.currentDateTime().addSecs(3600))  # 1 hora após o início
+        self.end_datetime.setCalendarPopup(True)
+
+        self.interval_label = QLabel("Intervalo (segundos):")
+        self.interval_spinbox = QSpinBox()
+        self.interval_spinbox.setRange(1, 3600)  # Intervalo entre 1 segundo e 1 hora
+
+        # Adicionando widgets ao layout
+        layout.addWidget(self.start_label)
+        layout.addWidget(self.start_datetime)
+        layout.addWidget(self.end_label)
+        layout.addWidget(self.end_datetime)
+        layout.addWidget(self.interval_label)
+        layout.addWidget(self.interval_spinbox)
+
+        # Botões de confirmação
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        layout.addWidget(self.button_box)
+
+        self.setLayout(layout)
+
+        # Conexões dos botões
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+
+    def get_settings(self):
+        return (self.start_datetime.dateTime().toPyDateTime(),
+                self.end_datetime.dateTime().toPyDateTime(),
+                self.interval_spinbox.value())
+
+class CaptureWnd(QMainWindow, Ui_MainWindow):
+    def __init__(self):
+        super(CaptureWnd, self).__init__()
+        self.setupUi(self)
+        self.init_ui()
+
+        self.loginID = C_LLONG()
+        self.m_DisConnectCallBack = fDisConnect(self.DisConnectCallBack)
+        self.m_ReConnectCallBack = fHaveReConnect(self.ReConnectCallBack)
+
+        self.sdk = NetClient()
+        self.sdk.InitEx(self.m_DisConnectCallBack)
+        self.sdk.SetAutoReconnect(self.m_ReConnectCallBack)
+
+        self.ScheduledCapture_pushButton = QPushButton("Captura Programada", self)
+        self.ScheduledCapture_pushButton.setGeometry(360, 142, 160, 30)  # Ajuste a posição e o tamanho conforme necessário
+        self.ScheduledCapture_pushButton.setEnabled(True)
+
+        self.ScheduledCapture_pushButton.clicked.connect(self.start_scheduled_capture)
+
+        self.CancelScheduledCapture_pushButton = QPushButton("Cancelar Captura", self)
+        self.CancelScheduledCapture_pushButton.setGeometry(560, 142, 160, 30)
+        self.CancelScheduledCapture_pushButton.setEnabled(False)
+
+        # Estilizando o botão com CSS
+        self.CancelScheduledCapture_pushButton.setStyleSheet("""
+            QPushButton {
+                background-color: #FF6347; /* Vermelho tomate */
+                color: white; /* Texto branco */
+                font-size: 14px; /* Tamanho da fonte */
+                font-weight: bold; /* Texto em negrito */
+                border: 2px solid #FF4500; /* Borda vermelha escura */
+                border-radius: 8px; /* Bordas arredondadas */
+                padding: 5px;
+            }
+            QPushButton:disabled {
+                background-color: #FFA07A; /* Vermelho claro quando desabilitado */
+                color: #FFFFFF80; /* Texto branco semi-transparente */
+                border: 2px solid #FF6347; /* Manter borda mesmo desabilitado */
+            }
+            QPushButton:hover {
+                background-color: #FF4500; /* Vermelho mais intenso ao passar o mouse */
+            }
+            QPushButton:pressed {
+                background-color: #CD5C5C; /* Vermelho escuro ao clicar */
+                border: 2px solid #8B0000; /* Borda mais escura ao clicar */
+            }
+        """)
+        self.CancelScheduledCapture_pushButton.clicked.connect(self.cancel_scheduled_capture)
+
+    def set_green_titlebar(self):
+        hwnd = int(self.winId())
+        green_color = 0x002902  # Verde
+        white_color = 0xFFFFFF  # Branco (cor do texto)
+
+        DWMWA_CAPTION_COLOR = 35
+        DWMWA_TEXT_COLOR = 36
+
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR,
+            ctypes.byref(ctypes.c_int(green_color)),
+            ctypes.sizeof(ctypes.c_int),
+        )
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TEXT_COLOR,
+            ctypes.byref(ctypes.c_int(white_color)),
+            ctypes.sizeof(ctypes.c_int),
+        )
+
+    def init_ui(self):
+        self.setWindowIcon(QIcon(resource_path("icone.ico")))
+        self.tray_icon = QSystemTrayIcon(QIcon(resource_path("icone.ico")), self)
+        self.tray_icon.show()
+        # Estilizando a janela principal
+        self.setStyleSheet(
+            """
+            QMainWindow {
+                background-color: #006400;
+                color: white;
+            }
+            
+            QPushButton {
+                background-color: #004d00;
+                color: white;
+                border: 1px solid white;
+                border-radius: 5px;
+            }
+
+            QPushButton:hover {
+                background-color: #005f00;
+            }
+
+            QLineEdit {
+                background-color: #004d00;
+                color: white;
+                border: 1px solid white;
+                border-radius: 3px;
+            }
+
+            QLabel {
+                color: white;
+            }
+
+            QComboBox {
+                background-color: #004d00;
+                color: white;
+                border: 1px solid white;
+                border-radius: 3px;
+            }
+
+            QMessageBox {
+                background-color: #006400;
+                color: white;
+            }
+            """
+        )
+
+        self.setWindowTitle("CAPSYS - Captura de Imagens")
+        self.set_green_titlebar()  # Aplicar a barra de título verde
+
+        self.setStyleSheet("background-color: #002902; color: white; font-weight: bold; font-size: 14px; font-family: Times New Roman;")
+
+        self.IP_lineEdit.setText('10.100.')
+        self.Port_lineEdit.setText('37777')
+        self.User_lineEdit.setText('admin')
+        self.Pwd_lineEdit.setText('@1234567')
+
+        self.Login_pushButton.setText("Conectar")
+        self.Logout_pushButton.setText("Desconectar")
+        self.Capture_pushButton.setText("Capturar Imagem")
+
+        self.Login_pushButton.clicked.connect(self.login_btn_onclick)
+        self.Logout_pushButton.clicked.connect(self.logout_btn_onclick)
+        self.Capture_pushButton.clicked.connect(self.capture_btn_onclick)
+
+        self.Login_pushButton.setEnabled(True)
+        self.Logout_pushButton.setEnabled(False)
+        self.Capture_pushButton.setEnabled(False)
+
+    def start_scheduled_capture(self):
+        dialog = ScheduledCaptureDialog()
+        if dialog.exec_() == QDialog.Accepted:
+            start_time, end_time, interval = dialog.get_settings()
+
+            if start_time >= end_time:
+                QMessageBox.warning(self, "Erro", "A data de término deve ser posterior à data de início.")
+                return
+
+            self.scheduled_capture_active = True
+            self.ScheduledCapture_pushButton.setEnabled(False)
+            self.CancelScheduledCapture_pushButton.setEnabled(True)
+            self.run_scheduled_capture(start_time, end_time, interval)
+
+    def run_scheduled_capture(self, start_time, end_time, interval):
+        if not self.scheduled_capture_active:
+            return
+
+        now = datetime.now()
+        if now < start_time:
+            Timer((start_time - now).total_seconds(), self.run_scheduled_capture, [start_time, end_time, interval]).start()
+        elif start_time <= now <= end_time:
+            self.capture_image()
+            Timer(interval, self.run_scheduled_capture, [start_time, end_time, interval]).start()
+        else:
+            self.scheduled_capture_active = False
+            self.ScheduledCapture_pushButton.setEnabled(True)
+            self.CancelScheduledCapture_pushButton.setEnabled(False)
+            QMessageBox.information(self, "Captura Programada", "✅ Captura programada concluída.")
+
+    def cancel_scheduled_capture(self):
+        self.scheduled_capture_active = False
+        self.ScheduledCapture_pushButton.setEnabled(True)
+        self.CancelScheduledCapture_pushButton.setEnabled(False)
+        QMessageBox.information(self, "Captura Programada", "⛔️ Captura programada cancelada.")
+
+    def capture_image(self):
+        dwUser = 0
+        self.sdk.SetSnapRevCallBack(CaptureCallBack, dwUser)
+        channel = self.Channel_comboBox.currentIndex()
+        snap = SNAP_PARAMS()
+        snap.Channel = channel
+        snap.Quality = 1
+        snap.mode = 0
+        self.sdk.SnapPictureEx(self.loginID, snap)
+
+
+    def login_btn_onclick(self):
+        ip = self.IP_lineEdit.text()
+        port = int(self.Port_lineEdit.text())
+        username = self.User_lineEdit.text()
+        password = self.Pwd_lineEdit.text()
+        stuInParam = NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY()
+        stuInParam.dwSize = sizeof(NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY)
+        stuInParam.szIP = ip.encode()
+        stuInParam.nPort = port
+        stuInParam.szUserName = username.encode()
+        stuInParam.szPassword = password.encode()
+        stuInParam.emSpecCap = EM_LOGIN_SPAC_CAP_TYPE.TCP
+        stuInParam.pCapParam = None
+
+        stuOutParam = NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY()
+        stuOutParam.dwSize = sizeof(NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY)
+
+        self.loginID, device_info, error_msg = self.sdk.LoginWithHighLevelSecurity(stuInParam, stuOutParam)
+        if self.loginID != 0:
+            self.setWindowTitle('🟢 CAPSYS - Online')
+            self.Login_pushButton.setEnabled(False)
+            self.Logout_pushButton.setEnabled(True)
+            if int(device_info.nChanNum) > 0:
+                self.Capture_pushButton.setEnabled(True)
+            for i in range(int(device_info.nChanNum)):
+                self.Channel_comboBox.addItem(str(i + 1))
+        else:
+            QMessageBox.about(self, 'Aviso', 'Falha ao realizar login.')  # Mensagem genérica
+
+
+    def logout_btn_onclick(self):
+        if self.loginID == 0:
+            return
+        self.sdk.Logout(self.loginID)
+        self.Login_pushButton.setEnabled(True)
+        self.Logout_pushButton.setEnabled(False)
+        self.Capture_pushButton.setEnabled(False)
+        self.setWindowTitle("Captura - Offline")
+        self.loginID = 0
+        self.Channel_comboBox.clear()
+        self.Picture_label.clear()
+
+    def capture_btn_onclick(self):
+        dwUser = 0
+        self.sdk.SetSnapRevCallBack(CaptureCallBack, dwUser)
+        channel = self.Channel_comboBox.currentIndex()
+        snap = SNAP_PARAMS()
+        snap.Channel = channel
+        snap.Quality = 1
+        snap.mode = 0
+        self.sdk.SnapPictureEx(self.loginID, snap)
+
+    def update_ui(self, pBuf, RevLen, EncodeType):
+        # Criar a pasta 'Capturas' se ela não existir
+        if not os.path.exists("Capturas"):
+            os.makedirs("Capturas")
+        
+        # Obter o buffer da imagem
+        pic_buf = cast(pBuf, POINTER(c_ubyte * RevLen)).contents
+        
+        # Gerar um nome de arquivo único com data e hora
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        file_path = os.path.join("Capturas", f"captura_{timestamp}.jpg")
+        
+        # Salvar a imagem no disco
+        with open(file_path, 'wb') as f:
+            f.write(pic_buf)
+        
+        # Exibir a imagem na interface
+        image = QPixmap(file_path).scaled(self.Picture_label.width(), self.Picture_label.height())
+        self.Picture_label.setPixmap(image)
+
+    def DisConnectCallBack(self, lLoginID, pchDVRIP, nDVRPort, dwUser):
+        self.setWindowTitle("CAPSYS - Offline")
+
+    def ReConnectCallBack(self, lLoginID, pchDVRIP, nDVRPort, dwUser):
+        self.setWindowTitle('CAPSYS - Online')
+
+    def closeEvent(self, event):
+        event.accept()
+        if self.loginID:
+            self.sdk.Logout(self.loginID)
+            self.loginID = 0
+        self.sdk.Cleanup()
+        self.Picture_label.clear()
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    wnd = CaptureWnd()
+    wnd.show()
+    sys.exit(app.exec_())

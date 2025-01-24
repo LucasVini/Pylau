@@ -1,0 +1,177 @@
+import sys
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget, QPushButton, QLabel, QGridLayout
+)
+from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt
+
+
+class ExcelComparator(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Comparador de Dados - Excel/CSV")
+        self.resize(1200, 600)
+
+        # Layout principal
+        main_layout = QVBoxLayout()
+
+        # Labels de instrução
+        label_instructions = QLabel(
+            "Cole as colunas dos dois arquivos lado a lado para comparar.\n"
+            "Use Ctrl+C no Excel para copiar as colunas e Ctrl+V aqui para colar todas de uma vez."
+        )
+        main_layout.addWidget(label_instructions)
+
+        # Tabela de entrada
+        self.table_left = QTableWidget(0, 5)
+        self.table_right = QTableWidget(0, 5)
+        self.setup_table(self.table_left, "Planilha 1")
+        self.setup_table(self.table_right, "Planilha 2")
+
+        # Botões
+        compare_button = QPushButton("Comparar")
+        compare_button.clicked.connect(self.compare_tables)
+
+        clear_button = QPushButton("Limpar Tudo")
+        clear_button.clicked.connect(self.clear_tables)
+
+        # Grid para as tabelas
+        grid = QGridLayout()
+        grid.addWidget(QLabel("Planilha 1"), 0, 0)
+        grid.addWidget(QLabel("Planilha 2"), 0, 1)
+        grid.addWidget(self.table_left, 1, 0)
+        grid.addWidget(self.table_right, 1, 1)
+
+        # Adiciona tudo ao layout principal
+        main_layout.addLayout(grid)
+        main_layout.addWidget(compare_button)
+        main_layout.addWidget(clear_button)
+
+        # Widget principal
+        container = QWidget()
+        container.setLayout(main_layout)
+        self.setCentralWidget(container)
+
+    def setup_table(self, table, title):
+        headers = ["Nível", "Quantidade", "Código", "Descrição", "Local de Montagem"]
+        table.setHorizontalHeaderLabels(headers)
+        table.setAlternatingRowColors(True)
+        table.setStyleSheet("alternate-background-color: #f0f0f0; background-color: white;")
+        table.setAcceptDrops(True)
+        table.setDragDropMode(QTableWidget.NoDragDrop)
+        table.installEventFilter(self)
+
+    def compare_tables(self):
+        left_data = self.get_table_data(self.table_left)
+        right_data = self.get_table_data(self.table_right)
+
+        # Índice das colunas
+        idx_nivel = 0
+        idx_qtd = 1
+        idx_codigo = 2
+        idx_desc = 3
+        idx_local = 4
+
+        for row_left in left_data:
+            codigo_left = row_left[idx_codigo]
+            for row_right in right_data:
+                codigo_right = row_right[idx_codigo]
+                if codigo_left == codigo_right:
+                    # Comparar características baseadas no pivô (Código)
+                    for col in [idx_nivel, idx_qtd, idx_desc]:
+                        if row_left[col] != row_right[col]:
+                            self.highlight_difference(self.table_left, left_data.index(row_left), col)
+                            self.highlight_difference(self.table_right, right_data.index(row_right), col)
+                    
+                    # Comparação inteligente na coluna "Local de Montagem"
+                    if not self.compare_local_montagem(row_left[idx_local], row_right[idx_local]):
+                        self.highlight_difference(self.table_left, left_data.index(row_left), idx_local)
+                        self.highlight_difference(self.table_right, right_data.index(row_right), idx_local)
+
+    def compare_local_montagem(self, left, right):
+        """
+        Compara inteligentemente os valores de 'Local de Montagem', considerando Ranges como R(10,12) equivalentes a R10,R11,R12.
+        """
+        left_set = self.parse_local_montagem(left)
+        right_set = self.parse_local_montagem(right)
+        return left_set == right_set
+
+    def parse_local_montagem(self, value):
+        """
+        Converte um valor como "R10, R11, R12" ou "R(10,12)" em um conjunto de identificadores únicos.
+        """
+        result = set()
+        parts = value.split(",")
+        for part in parts:
+            part = part.strip()
+            if "(" in part and ")" in part:
+                prefix, range_part = part.split("(")
+                range_part = range_part.rstrip(")")
+                
+                # Verifica se a faixa está no formato correto
+                try:
+                    start, end = map(int, range_part.split(","))
+                    for i in range(start, end + 1):
+                        result.add(f"{prefix}{i}")
+                except ValueError:
+                    # Se não conseguir converter, algo deu errado com o formato
+                    print(f"Erro ao processar a faixa: {range_part}")
+            else:
+                result.add(part)
+        return result
+
+    def highlight_difference(self, table, row, col):
+        item = table.item(row, col)
+        if item:
+            item.setBackground(QColor("red"))
+
+    def clear_tables(self):
+        """Limpa todas as tabelas."""
+        self.table_left.setRowCount(0)
+        self.table_right.setRowCount(0)
+
+    def get_table_data(self, table):
+        """Extrai os dados da tabela para uma lista de listas."""
+        data = []
+        for row in range(table.rowCount()):
+            row_data = []
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
+                row_data.append(item.text() if item else "")
+            data.append(row_data)
+        return data
+
+    def eventFilter(self, source, event):
+        # Permitir colar grandes blocos de texto (Ctrl+V)
+        if event.type() == event.KeyPress:  # QEvent.KeyPress
+            if event.key() == Qt.Key_V and QApplication.keyboardModifiers() == Qt.ControlModifier:
+                clipboard = QApplication.clipboard()
+                text = clipboard.text()
+                if text:
+                    self.paste_text(source, text)
+                return True
+        return super().eventFilter(source, event)
+
+    def paste_text(self, table, text):
+        rows = text.splitlines()
+        start_row = table.currentRow() if table.currentRow() >= 0 else 0
+        start_col = table.currentColumn() if table.currentColumn() >= 0 else 0
+
+        # Garantir que a tabela tenha espaço suficiente
+        for i, row in enumerate(rows):
+            current_row = start_row + i
+            if current_row >= table.rowCount():
+                table.insertRow(table.rowCount())
+
+            # Colar os valores em uma única coluna (na coluna selecionada)
+            cell = row.strip()
+            table.setItem(current_row, start_col, QTableWidgetItem(cell))
+
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = ExcelComparator()
+    window.show()
+    sys.exit(app.exec_())

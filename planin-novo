@@ -227,16 +227,8 @@ class ComparadorExcel(QMainWindow):
 
                 nome_coluna = nome_coluna_totvs.replace("_totvs", "")
 
-                # Ignora as colunas Descrição e Texto Breve (CORREÇÃO)
-                if nome_coluna in ("Descricao_totvs", "Descricao_sap"):
-                    continue
-
-                # Se a coluna for a de palavras, ignora a comparação
-                if coluna_palavras and nome_coluna == coluna_palavras:
-                    continue
-
-                # Não destaca as colunas de descrição
-                if nome_coluna == "Descrição":
+                # Ignora a coluna de índice 3 (quarta coluna) de ambas as planilhas (índices 6 e 7 na tabela combinada)
+                if coluna == 6 or coluna == 7:
                     continue
 
                 # Usa a função sao_equivalentes para comparar os valores, passando o nome da coluna (CORRIGIDO)
@@ -353,7 +345,7 @@ class ComparadorExcel(QMainWindow):
         """Destaca a célula com cor vermelha."""
         item = tabela.item(linha, coluna)
         if item:
-            item.setBackground(QColor("red"))
+            item.setBackground(QColor("pink"))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

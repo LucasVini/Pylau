@@ -26,8 +26,8 @@ class ComparadorExcel(QMainWindow):
         layout_principal.addWidget(botao_importar_totvs)
 
         # Tabelas de entrada
-        self.tabela_totvs = QTableWidget(0, 4)
-        self.tabela_sap = QTableWidget(0, 4)
+        self.tabela_totvs = QTableWidget(0, 5)
+        self.tabela_sap = QTableWidget(0, 5)
         self.configurar_tabela(self.tabela_totvs, "TOTVS")
         self.configurar_tabela(self.tabela_sap, "SAP")
 
@@ -131,7 +131,7 @@ class ComparadorExcel(QMainWindow):
         # Solicita ao usuário a coluna que contém apenas palavras
         coluna_palavras, ok = QInputDialog.getText(self, "Coluna de Palavras", "Digite o nome da coluna que contém apenas palavras (ou deixe em branco):")
         if not ok:
-            coluna_palavras = None  # Se o usuário cancelar, não ignorar nenhuma coluna
+            coluna_palavras = None
 
         # Padroniza os nomes das colunas
         colunas_totvs = self.df_totvs.columns.tolist()
@@ -140,32 +140,42 @@ class ComparadorExcel(QMainWindow):
         else:
             self.df_sap.columns = colunas_totvs[:len(self.df_sap.columns)]
 
-        # Cria um DataFrame vazio para a comparação
-        colunas_comparacao = []
-        for coluna in colunas_totvs:
-            colunas_comparacao.extend([f'{coluna}_totvs', f'{coluna}_sap'])
+        # Adiciona sufixo _totvs e _sap aos nomes das colunas
+        self.df_totvs = self.df_totvs.add_suffix('_totvs')
+        self.df_sap = self.df_sap.add_suffix('_sap')
 
-        df_comparacao = pd.DataFrame(columns=colunas_comparacao)
+        try:
+            # Define a posição da coluna "Código" (índice 2, pois é a terceira coluna)
+            posicao_codigo = 2
 
-       # Itera pelas linhas dos DataFrames TOTVS e SAP
-        max_linhas = max(len(self.df_totvs), len(self.df_sap))
-        for i in range(max_linhas):
-            linha_totvs = self.df_totvs.iloc[i] if i < len(self.df_totvs) else pd.Series(dtype='object')
-            linha_sap = self.df_sap.iloc[i] if i < len(self.df_sap) else pd.Series(dtype='object')
+            # Realiza o merge dos DataFrames com base na posição da coluna "Código"
+            df_combinado = self.df_totvs.merge(self.df_sap, left_on=self.df_totvs.columns[posicao_codigo], right_on=self.df_sap.columns[posicao_codigo], how='outer', suffixes=('_totvs', '_sap'))
 
-            nova_linha = {}
+            # Agrupa as linhas pela coluna "Código" e soma os valores da última coluna
+            df_comparacao = df_combinado.groupby(df_combinado.columns[posicao_codigo]).agg({
+                **{col: 'first' for col in df_combinado.columns if col != df_combinado.columns[-1]},
+                df_combinado.columns[-1]: 'sum'
+            }).reset_index(drop=True)  # Reset the index and drop the index column
+
+            # Converte as colunas "Codigo_totvs" e "Codigo_sap" para inteiro, removendo valores não numéricos
+            df_comparacao['Codigo_totvs'] = pd.to_numeric(df_comparacao['Codigo_totvs'], errors='coerce')
+            df_comparacao['Codigo_totvs'] = df_comparacao['Codigo_totvs'].astype(pd.Int64Dtype())
+
+            df_comparacao['Codigo_sap'] = pd.to_numeric(df_comparacao['Codigo_sap'], errors='coerce')
+            df_comparacao['Codigo_sap'] = df_comparacao['Codigo_sap'].astype(pd.Int64Dtype())
+
+            # Cria um novo DataFrame para a comparação, com as colunas ordenadas
+            colunas_comparacao = []
             for coluna in colunas_totvs:
-                valor_totvs = linha_totvs.get(coluna)
-                valor_sap = linha_sap.get(coluna)
+                colunas_comparacao.append(f'{coluna}_totvs')
+                colunas_comparacao.append(f'{coluna}_sap')
+            df_comparacao = df_comparacao[colunas_comparacao]
 
-                # Mantém os valores originais, sem conversões
-                nova_linha[f'{coluna}_totvs'] = valor_totvs
-                nova_linha[f'{coluna}_sap'] = valor_sap
+            # Exibe o DataFrame de comparação
+            self.mostrar_janela_comparacao(df_comparacao, coluna_palavras)
 
-            df_comparacao = pd.concat([df_comparacao, pd.DataFrame([nova_linha])], ignore_index=True)
-
-        # Exibe o DataFrame de comparação em uma nova janela
-        self.mostrar_janela_comparacao(df_comparacao, coluna_palavras)
+        except IndexError:
+            QMessageBox.warning(self, "Aviso", "Não foi possível encontrar a coluna 'Código' na posição correta. Verifique se a coluna está na terceira posição em ambas as planilhas.")
 
     def tratar_valor(self, valor, nome_coluna=None):
         """Trata um valor numérico, removendo casas decimais se forem zero 
@@ -217,6 +227,10 @@ class ComparadorExcel(QMainWindow):
 
                 nome_coluna = nome_coluna_totvs.replace("_totvs", "")
 
+                # Ignora as colunas Descrição e Texto Breve (CORREÇÃO)
+                if nome_coluna in ("Descricao_totvs", "Descricao_sap"):
+                    continue
+
                 # Se a coluna for a de palavras, ignora a comparação
                 if coluna_palavras and nome_coluna == coluna_palavras:
                     continue
@@ -225,8 +239,8 @@ class ComparadorExcel(QMainWindow):
                 if nome_coluna == "Descrição":
                     continue
 
-                # Usa a função sao_equivalentes para comparar os valores
-                if not self.sao_equivalentes(valor_totvs, valor_sap):
+                # Usa a função sao_equivalentes para comparar os valores, passando o nome da coluna (CORRIGIDO)
+                if not self.sao_equivalentes(valor_totvs, valor_sap, nome_coluna):
                     # Destaca as células que não coincidem
                     item_totvs = tabela_comparacao.item(linha, coluna)
                     item_sap = tabela_comparacao.item(linha, coluna + 1)
@@ -235,29 +249,29 @@ class ComparadorExcel(QMainWindow):
                     if item_sap:
                         self.destacar_diferenca(tabela_comparacao, linha, coluna + 1)
 
-
         janela_comparacao.show()
 
     def sao_equivalentes(self, valor1, valor2, nome_coluna=None):
-        """Verifica se dois valores são equivalentes, considerando 'Montagem', 'QTD/Quantidade' e outros critérios."""
-
-        # Converte valores para string para tratamento uniforme
-        valor1 = str(valor1) if pd.notna(valor1) else ""
-        valor2 = str(valor2) if pd.notna(valor2) else ""
+        """Verifica se dois valores são equivalentes."""
 
         if nome_coluna == "Montagem":
-            elementos1 = self.extrair_elementos(valor1)
-            elementos2 = self.extrair_elementos(valor2)
+            elementos1 = self.extrair_elementos(str(valor1))  # Converte para string aqui
+            elementos2 = self.extrair_elementos(str(valor2))
             return elementos1 == elementos2
+
+        # Normaliza os valores apenas para colunas numéricas
+        if nome_coluna.lower() in ("qtd", "quantidade") or not isinstance(valor1, str) or not isinstance(valor2, str):
+            valor1 = self.normalizar_valor(valor1)
+            valor2 = self.normalizar_valor(valor2)
 
         # Tratamento para QTD e Quantidade
         if nome_coluna.lower() in ("qtd", "quantidade"):
             try:
-                num1 = float(valor1.replace(",", ""))  # Remove vírgulas e converte para float
-                num2 = float(valor2.replace(",", ""))
+                num1 = float(valor1)  # Já está normalizado
+                num2 = float(valor2)
                 return num1 == num2
             except ValueError:
-                return False  # Se a conversão falhar, considera como não equivalentes
+                return False
 
         if isinstance(valor1, str) and isinstance(valor2, str):
             # Comparação de strings (com tratamento de R() e números)
@@ -268,7 +282,7 @@ class ComparadorExcel(QMainWindow):
             return valor1.strip() == valor2.strip()  # Comparação de strings normal
 
         try:
-            num1 = float(valor1)
+            num1 = float(valor1)  # Já está normalizado
             num2 = float(valor2)
             return num1 == num2  # Comparação numérica geral
         except ValueError:
@@ -281,15 +295,25 @@ class ComparadorExcel(QMainWindow):
 
         valor_str = str(valor)
 
-        # Remove vírgulas e pontos
-        valor_str = valor_str.replace(",", "").replace(".", "")
+        # Identifica o separador decimal
+        if valor_str.count(',') > valor_str.count('.'):
+            # Vírgula como separador decimal
+            valor_str = valor_str.replace(".", "")
+            valor_str = valor_str.replace(",", ".")
+        else:
+            # Ponto como separador decimal
+            valor_str = valor_str.replace(",", "")
+
+        # Remove zeros à direita apenas se houver ponto decimal (CORREÇÃO)
+        if '.' in valor_str:
+            valor_str = valor_str.rstrip('0')
 
         # Encontra números na string
         numeros = re.findall(r'\d+', valor_str)
 
-        # Se encontrar apenas um número, remove zeros à direita
+        # Se encontrar apenas um número, retorna ele
         if len(numeros) == 1:
-            return numeros[0].rstrip('0')
+            return numeros[0]
 
         # Se não encontrar um único número, retorna a string original
         return valor_str

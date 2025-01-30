@@ -1,0 +1,377 @@
+import sys
+import pandas as pd
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget, QPushButton, QLabel, QGridLayout, QFileDialog, QMessageBox, QInputDialog
+)
+from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt
+import re
+
+class ComparadorExcel(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Planin - Comparador de Dados - TOTVS/SAP - versão beta")
+        self.resize(1200, 600)
+
+        # Layout principal
+        layout_principal = QVBoxLayout()
+
+        # Botões para importar arquivos
+        botao_importar_sap = QPushButton("Importar SAP (xlsx)")
+        botao_importar_sap.clicked.connect(self.importar_sap)
+        botao_importar_totvs = QPushButton("Importar TOTVS (csv)")
+        botao_importar_totvs.clicked.connect(self.importar_totvs)
+        layout_principal.addWidget(botao_importar_sap)
+        layout_principal.addWidget(botao_importar_totvs)
+
+        # Tabelas de entrada
+        self.tabela_totvs = QTableWidget(0, 5)
+        self.tabela_sap = QTableWidget(0, 5)
+        self.configurar_tabela(self.tabela_totvs, "TOTVS")
+        self.configurar_tabela(self.tabela_sap, "SAP")
+
+        # Botão Comparar
+        botao_comparar = QPushButton("Comparar")
+        botao_comparar.clicked.connect(self.comparar_tabelas)
+        layout_principal.addWidget(botao_comparar)
+
+        # Botão Limpar
+        botao_limpar = QPushButton("Limpar Tabelas")
+        botao_limpar.clicked.connect(self.limpar_tabelas)
+        layout_principal.addWidget(botao_limpar)
+
+
+        # Grid para as tabelas
+        grid = QGridLayout()
+        grid.addWidget(QLabel("TOTVS"), 0, 0)
+        grid.addWidget(QLabel("SAP"), 0, 1)
+        grid.addWidget(self.tabela_totvs, 1, 0)
+        grid.addWidget(self.tabela_sap, 1, 1)
+        layout_principal.addLayout(grid)
+
+        # Widget principal
+        container = QWidget()
+        container.setLayout(layout_principal)
+        self.setCentralWidget(container)
+
+        # Inicializa os DataFrames
+        self.df_totvs = pd.DataFrame()
+        self.df_sap = pd.DataFrame()
+
+    def configurar_tabela(self, tabela, titulo):
+        tabela.setAlternatingRowColors(True)
+        tabela.setStyleSheet("alternate-background-color: #f0f0f0; background-color: white;")
+
+    def limpar_tabelas(self):
+        """Limpa o conteúdo das tabelas e DataFrames."""
+        self.tabela_totvs.clearContents()
+        self.tabela_totvs.setRowCount(0)
+        self.tabela_sap.clearContents()
+        self.tabela_sap.setRowCount(0)
+        self.df_totvs = pd.DataFrame()
+        self.df_sap = pd.DataFrame()
+
+    def importar_totvs(self):
+        """Importa os dados da planilha TOTVS (csv)."""
+        opcoes = QFileDialog.Options()
+        nome_arquivo, _ = QFileDialog.getOpenFileName(self, "Importar TOTVS", "", "Arquivos CSV (*.csv)", options=opcoes)
+        if nome_arquivo:
+            try:
+                # Tenta ler com diferentes delimitadores
+                for separador in [',', ';', '\t']:
+                    try:
+                        self.df_totvs = pd.read_csv(nome_arquivo, sep=separador, encoding='latin-1')
+                        # Verifica se a importação foi bem-sucedida
+                        if not self.df_totvs.empty:
+                            break
+                    except pd.errors.ParserError:
+                        continue
+                    except UnicodeDecodeError:
+                        QMessageBox.critical(self, "Erro", "Erro de codificação. Certifique-se de que o arquivo está em formato UTF-8 ou Latin-1.")
+                        return
+                else:
+                    QMessageBox.critical(self, "Erro", "Não foi possível ler o arquivo CSV com nenhum dos delimitadores comuns. Verifique o arquivo.")
+                    return
+
+                self.atualizar_tabela(self.tabela_totvs, self.df_totvs)
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Erro ao importar TOTVS: {e}")
+
+    def importar_sap(self):
+        """Importa os dados da planilha SAP (xlsx)."""
+        opcoes = QFileDialog.Options()
+        nome_arquivo, _ = QFileDialog.getOpenFileName(self, "Importar SAP", "", "Arquivos Excel (*.xlsx)", options=opcoes)
+        if nome_arquivo:
+            try:
+                self.df_sap = pd.read_excel(nome_arquivo)
+                self.atualizar_tabela(self.tabela_sap, self.df_sap)
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Erro ao importar SAP: {e}")
+
+    def atualizar_tabela(self, tabela, df):
+        """Atualiza a tabela com os dados do DataFrame."""
+        if df.empty:
+            return
+
+        cabecalhos = df.columns.tolist()
+        tabela.setColumnCount(len(cabecalhos))
+        tabela.setHorizontalHeaderLabels(cabecalhos)
+        tabela.setRowCount(len(df))
+        for linha in range(len(df)):
+            for coluna, valor in enumerate(df.iloc[linha]):
+                tabela.setItem(linha, coluna, QTableWidgetItem(str(valor)))
+
+    def comparar_tabelas(self):
+        """Compara as tabelas e destaca as diferenças."""
+        if self.df_totvs.empty or self.df_sap.empty:
+            QMessageBox.warning(self, "Aviso", "Importe as planilhas TOTVS e SAP primeiro.")
+            return
+
+        # Solicita ao usuário a coluna que contém apenas palavras
+        coluna_palavras, ok = QInputDialog.getText(self, "Coluna de Palavras", "Digite o nome da coluna que contém apenas palavras (ou deixe em branco):")
+        if not ok:
+            coluna_palavras = None
+
+        # Padroniza os nomes das colunas
+        colunas_totvs = self.df_totvs.columns.tolist()
+        if len(self.df_sap.columns) >= len(colunas_totvs):
+            self.df_sap.columns = colunas_totvs + self.df_sap.columns.tolist()[len(colunas_totvs):]
+        else:
+            self.df_sap.columns = colunas_totvs[:len(self.df_sap.columns)]
+
+        # Adiciona sufixo _totvs e _sap aos nomes das colunas
+        self.df_totvs = self.df_totvs.add_suffix('_totvs')
+        self.df_sap = self.df_sap.add_suffix('_sap')
+
+        try:
+            # Define a posição da coluna "Código" (índice 2, pois é a terceira coluna)
+            posicao_codigo = 2
+
+            # Realiza o merge dos DataFrames com base na posição da coluna "Código"
+            df_combinado = self.df_totvs.merge(self.df_sap, left_on=self.df_totvs.columns[posicao_codigo], right_on=self.df_sap.columns[posicao_codigo], how='outer', suffixes=('_totvs', '_sap'))
+
+            # Agrupa as linhas pela coluna "Código" e soma os valores da última coluna
+            df_comparacao = df_combinado.groupby(df_combinado.columns[posicao_codigo]).agg({
+                **{col: 'first' for col in df_combinado.columns if col != df_combinado.columns[-1]},
+                df_combinado.columns[-1]: 'sum'
+            }).reset_index(drop=True)  # Reset the index and drop the index column
+
+                # Define a posição da coluna "QTD" (índice 1, pois é a segunda coluna)
+            posicao_coluna_qtd = 1
+
+            # Agrupa as linhas pela coluna "Código" e soma os valores da última coluna e da coluna "QTD"
+            df_comparacao = df_combinado.groupby(df_combinado.columns[posicao_codigo]).agg({
+                **{col: 'first' for col in df_combinado.columns if col not in [df_combinado.columns[-1], df_combinado.columns[posicao_coluna_qtd]]},
+                df_combinado.columns[-1]: 'sum',  # Soma a última coluna
+                df_combinado.columns[posicao_coluna_qtd]: 'sum'  # Soma a coluna "QTD"
+            }).reset_index(drop=True)  # Reset the index and drop the index column
+
+                # Converte as colunas "QTD_totvs" e "QTD_sap" para numérico
+            df_combinado['QTD_totvs'] = pd.to_numeric(df_combinado['QTD_totvs'], errors='coerce')
+            df_combinado['QTD_sap'] = pd.to_numeric(df_combinado['QTD_sap'], errors='coerce')
+
+            # Agrupa as linhas pela coluna "Código" e soma os valores da última coluna e da coluna "QTD"
+            df_comparacao = df_combinado.groupby(df_combinado.columns[posicao_codigo]).agg({
+                **{col: 'first' for col in df_combinado.columns if col not in [df_combinado.columns[-1], df_combinado.columns[posicao_coluna_qtd]]},
+                df_combinado.columns[-1]: 'sum',  # Soma a última coluna
+                df_combinado.columns[posicao_coluna_qtd]: 'sum'  # Soma a coluna "QTD"
+            }).reset_index(drop=True)  # Reset the index and drop the index column
+
+
+            # Converte as colunas "Codigo_totvs" e "Codigo_sap" para inteiro, removendo valores não numéricos
+            df_comparacao['Codigo_totvs'] = pd.to_numeric(df_comparacao['Codigo_totvs'], errors='coerce')
+            df_comparacao['Codigo_totvs'] = df_comparacao['Codigo_totvs'].astype(pd.Int64Dtype())
+
+            df_comparacao['Codigo_sap'] = pd.to_numeric(df_comparacao['Codigo_sap'], errors='coerce')
+            df_comparacao['Codigo_sap'] = df_comparacao['Codigo_sap'].astype(pd.Int64Dtype())
+
+            # Cria um novo DataFrame para a comparação, com as colunas ordenadas
+            colunas_comparacao = []
+            for coluna in colunas_totvs:
+                colunas_comparacao.append(f'{coluna}_totvs')
+                colunas_comparacao.append(f'{coluna}_sap')
+            df_comparacao = df_comparacao[colunas_comparacao]
+
+            # Exibe o DataFrame de comparação
+            self.mostrar_janela_comparacao(df_comparacao, coluna_palavras)
+
+        except IndexError:
+            QMessageBox.warning(self, "Aviso", "Não foi possível encontrar a coluna 'Código' na posição correta. Verifique se a coluna está na terceira posição em ambas as planilhas.")
+
+    def tratar_valor(self, valor, nome_coluna=None):
+        """Trata um valor numérico, removendo casas decimais se forem zero 
+           e tratando números com ponto decimal como unidade ou milhar 
+           dependendo do contexto (nome da coluna).
+        """
+        try:
+            if pd.notna(valor):
+                valor_str = str(valor).replace(",", "")  # Remove vírgulas
+
+                # Verifica se há ponto decimal e se a coluna é "quantidade"
+                if '.' in valor_str and nome_coluna == "Quantidade":
+                    # Se for "Quantidade", trata o ponto decimal como separador de milhar
+                    valor_float = float(valor_str)
+                    return int(valor_float)  # Remove a parte decimal
+
+                elif '.' in valor_str:
+                    # Se não for "Quantidade", mantém o valor com ponto decimal se ele for diferente de zero
+                    valor_float = float(valor_str)
+                    if valor_float == int(valor_float):
+                        return int(valor_float)  # Remove parte decimal se for zero
+                    else:
+                        return valor_float
+
+                else:
+                    return int(valor_str)  # Converte para inteiro se não houver ponto decimal
+        except ValueError:
+            pass  # Mantém como string se a conversão falhar
+        return valor
+
+    def mostrar_janela_comparacao(self, df, coluna_palavras):
+        """Exibe o DataFrame de comparação em uma nova tabela."""
+        janela_comparacao = QMainWindow(self)
+        janela_comparacao.setWindowTitle("Comparação")
+        tabela_comparacao = QTableWidget(0, len(df.columns))
+        tabela_comparacao.setHorizontalHeaderLabels(df.columns)
+        janela_comparacao.setCentralWidget(tabela_comparacao)
+        janela_comparacao.resize(800, 1000)
+
+        self.atualizar_tabela(tabela_comparacao, df)
+
+        # Destaca as diferenças
+        for linha in range(len(df)):
+            for coluna in range(0, len(df.columns), 2):
+                nome_coluna_totvs = df.columns[coluna]
+                nome_coluna_sap = df.columns[coluna + 1]
+
+                valor_totvs = df.iloc[linha][nome_coluna_totvs]
+                valor_sap = df.iloc[linha][nome_coluna_sap]
+
+                nome_coluna = nome_coluna_totvs.replace("_totvs", "")
+
+                # Ignora a coluna de índice 3 (quarta coluna) de ambas as planilhas (índices 6 e 7 na tabela combinada)
+                if coluna == 6 or coluna == 7:
+                    continue
+
+                # Usa a função sao_equivalentes para comparar os valores, passando o nome da coluna (CORRIGIDO)
+                if not self.sao_equivalentes(valor_totvs, valor_sap, nome_coluna):
+                    # Destaca as células que não coincidem
+                    item_totvs = tabela_comparacao.item(linha, coluna)
+                    item_sap = tabela_comparacao.item(linha, coluna + 1)
+                    if item_totvs:
+                        self.destacar_diferenca(tabela_comparacao, linha, coluna)
+                    if item_sap:
+                        self.destacar_diferenca(tabela_comparacao, linha, coluna + 1)
+
+        janela_comparacao.show()
+
+    def sao_equivalentes(self, valor1, valor2, nome_coluna=None):
+        """Verifica se dois valores são equivalentes."""
+
+        if nome_coluna == "Montagem":
+            elementos1 = self.extrair_elementos(str(valor1))  # Converte para string aqui
+            elementos2 = self.extrair_elementos(str(valor2))
+            return elementos1 == elementos2
+
+        # Normaliza os valores apenas para colunas numéricas
+        if nome_coluna.lower() in ("qtd", "quantidade") or not isinstance(valor1, str) or not isinstance(valor2, str):
+            valor1 = self.normalizar_valor(valor1)
+            valor2 = self.normalizar_valor(valor2)
+
+        # Tratamento para QTD e Quantidade
+        if nome_coluna.lower() in ("qtd", "quantidade"):
+            try:
+                num1 = float(valor1)  # Já está normalizado
+                num2 = float(valor2)
+                return num1 == num2
+            except ValueError:
+                return False
+
+        if isinstance(valor1, str) and isinstance(valor2, str):
+            # Comparação de strings (com tratamento de R() e números)
+            numeros1 = self.extrair_elementos(valor1)
+            numeros2 = self.extrair_elementos(valor2)
+            if numeros1 and numeros2:
+                return numeros1 == numeros2
+            return valor1.strip() == valor2.strip()  # Comparação de strings normal
+
+        try:
+            num1 = float(valor1)  # Já está normalizado
+            num2 = float(valor2)
+            return num1 == num2  # Comparação numérica geral
+        except ValueError:
+            return False
+
+    def normalizar_valor(self, valor):
+        """Remove vírgulas, pontos e zeros à direita da parte decimal de um valor."""
+        if pd.isna(valor):
+            return ""
+
+        valor_str = str(valor)
+
+        # Identifica o separador decimal
+        if valor_str.count(',') > valor_str.count('.'):
+            # Vírgula como separador decimal
+            valor_str = valor_str.replace(".", "")
+            valor_str = valor_str.replace(",", ".")
+        else:
+            # Ponto como separador decimal
+            valor_str = valor_str.replace(",", "")
+
+        # Remove zeros à direita apenas se houver ponto decimal (CORREÇÃO)
+        if '.' in valor_str:
+            valor_str = valor_str.rstrip('0')
+
+        # Encontra números na string
+        numeros = re.findall(r'\d+', valor_str)
+
+        # Se encontrar apenas um número, retorna ele
+        if len(numeros) == 1:
+            return numeros[0]
+
+        # Se não encontrar um único número, retorna a string original
+        return valor_str
+
+    def extrair_elementos(self, texto):
+        elementos = set()
+        texto = texto.strip().replace(' ', '')  # Remove espaços
+        
+        # Extrai a letra principal (ex: 'D' em 'D(1-3)' ou 'C12')
+        letra_match = re.match(r'^([A-Za-z]+)[\(\d]', texto)
+        letra = letra_match.group(1) if letra_match else ''
+        
+        # Extrai todos os números e intervalos do texto, removendo outros caracteres
+        partes_numeros = re.sub(r'[^0-9\-,]', '', texto)
+        partes = partes_numeros.split(',')
+        
+        for parte in partes:
+            parte = parte.strip()
+            if not parte:
+                continue
+            # Processa intervalos (ex: 1-3)
+            if '-' in parte:
+                try:
+                    inicio, fim = map(int, parte.split('-'))
+                    for num in range(inicio, fim + 1):
+                        elementos.add(f"{letra}{num}")
+                except ValueError:
+                    continue
+            else:
+                # Processa números únicos
+                if parte.isdigit():
+                    elementos.add(f"{letra}{parte}")
+        
+        return elementos
+
+    def destacar_diferenca(self, tabela, linha, coluna):
+        """Destaca a célula com cor vermelha."""
+        item = tabela.item(linha, coluna)
+        if item:
+            item.setBackground(QColor("pink"))
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    janela = ComparadorExcel()
+    janela.show()
+    sys.exit(app.exec_())

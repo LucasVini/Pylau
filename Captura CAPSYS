@@ -382,7 +382,7 @@ class CaptureWnd(QMainWindow, Ui_MainWindow):
             """
         )
 
-        self.setWindowTitle("CAPSYS - Captura de Imagens")
+        self.setWindowTitle("CAPSYS View - Captura de Imagens")
         self.set_green_titlebar()  # Aplicar a barra de título verde
 
         self.setStyleSheet("background-color: #002902; color: white; font-weight: bold; font-size: 14px; font-family: Times New Roman;")

@@ -68,6 +68,19 @@ import paramiko.primes
 import paramiko.rsakey
 import paramiko.ecdsakey
 
+# Importações NetSDK (movidas para o topo para melhor organização)
+from NetSDK.NetSDK import NetClient
+from NetSDK.SDK_Callback import fDisConnect, fHaveReConnect
+from NetSDK.SDK_Enum import EM_DEV_CFG_TYPE, EM_LOGIN_SPAC_CAP_TYPE
+from NetSDK.SDK_Struct import (
+    LOG_SET_PRINT_INFO, NET_TIME, C_LDWORD, C_LLONG,
+    NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY, NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY,
+    CB_FUNCTYPE
+)
+
+from timex import TimeSyncWidget # Importa o novo widget
+
+from sftpapp import SFTPApplication  
 
 # Configuração do logger
 logger = logging.getLogger("SFTPServerLogger")
@@ -87,6 +100,65 @@ logging.basicConfig(
 )
 
 logging.info("O programa iniciou com sucesso.")
+
+
+## TIME SDK
+class TimeSyncDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Sincronizar Horário")
+        self.time_sync_widget = TimeSyncWidget(self) # Instancia o widget passando o dialogo como pai
+        layout = QVBoxLayout()
+        layout.addWidget(self.time_sync_widget)
+        self.setLayout(layout)
+
+        self.time_sync_widget.Login_pushButton.clicked.connect(self.handle_login)
+        self.time_sync_widget.GetTime_pushButton.clicked.connect(self.handle_get_time)
+        self.time_sync_widget.SetTime_pushButton.clicked.connect(self.handle_set_time)
+
+    def handle_login(self):
+        ip = self.time_sync_widget.IP_lineEdit.text()
+        port = int(self.time_sync_widget.Port_lineEdit.text())
+        username = self.time_sync_widget.Name_lineEdit.text()
+        password = self.time_sync_widget.Pwd_lineEdit.text()
+        success, error_msg = self.time_sync_widget.login(ip, port, username, password)
+        if not success:
+            QMessageBox.warning(self, "Erro de Login", error_msg)
+        else:
+            self.time_sync_widget.Login_pushButton.setText("Logout") # Muda o texto do botao
+            QMessageBox.information(self, "Login", "Login efetuado com sucesso")
+            self.time_sync_widget.IP_lineEdit.setEnabled(False)
+            self.time_sync_widget.Port_lineEdit.setEnabled(False)
+            self.time_sync_widget.Name_lineEdit.setEnabled(False)
+            self.time_sync_widget.Pwd_lineEdit.setEnabled(False)
+            self.time_sync_widget.Login_pushButton.clicked.disconnect(self.handle_login)
+            self.time_sync_widget.Login_pushButton.clicked.connect(self.handle_logout)
+    
+    def handle_logout(self):
+        self.time_sync_widget.logout()
+        self.time_sync_widget.Login_pushButton.setText("Entrar")
+        self.time_sync_widget.IP_lineEdit.setEnabled(True)
+        self.time_sync_widget.Port_lineEdit.setEnabled(True)
+        self.time_sync_widget.Name_lineEdit.setEnabled(True)
+        self.time_sync_widget.Pwd_lineEdit.setEnabled(True)
+        self.time_sync_widget.Login_pushButton.clicked.disconnect(self.handle_logout)
+        self.time_sync_widget.Login_pushButton.clicked.connect(self.handle_login)
+
+    def handle_get_time(self):
+        device_time, error_msg = self.time_sync_widget.get_device_time()
+        if device_time is None:
+            QMessageBox.warning(self, "Erro ao obter tempo", error_msg)
+        else:
+            self.time_sync_widget.Time_dateTimeEdit.setDateTime(device_time)
+
+    def handle_set_time(self):
+        date_time = self.time_sync_widget.Time_dateTimeEdit.dateTime()
+        success, error_msg = self.time_sync_widget.set_device_time(date_time)
+        if not success:
+            QMessageBox.warning(self, "Erro ao configurar tempo", error_msg)
+        else:
+            QMessageBox.information(self, "Sucesso", "Tempo configurado com sucesso")
+
 
 
 # Classe base para threads que executam scripts
@@ -695,18 +767,6 @@ class encontrarThread(QThread):
         subprocess.run(["python", self.script_path], check=True)
 
 
-class sftpThread(QThread):
-    def __init__(self, script_path):
-        super().__init__()
-        if hasattr(sys, "_MEIPASS"):
-            self.script_path = os.path.join(sys._MEIPASS, script_path)
-        else:
-            self.script_path = script_path
-
-    def run(self):
-        subprocess.run(["python", self.script_path], check=True)
-
-
 class iaThread(QThread):
     def __init__(self, script_path):
         super().__init__()
@@ -724,13 +784,16 @@ class Pylau(QMainWindow):
 
         self.init_ui()
         self.ftp_server_thread = None
-        self.sftp_server_thread = None
         self.rtsp_stream_thread = None
         self.port_checker_thread = None
+
+        # Inicialize a aplicação SFTP
+        self.sftpapp = SFTPApplication([])  # Passa uma lista vazia como argv
+        self.sftpapp.log_signal.connect(self.logar_sftp)
         self.sftp_running = False
 
         # Logger
-        self.logger = logging.getLogger("SFTPServerLogger")
+        self.logger = logging.getLogger("PylauLogger")
         self.logger.setLevel(logging.INFO)
         formatter = logging.Formatter(
             "[%(levelname)s %(asctime)s] %(message)s", "%d-%m-%Y %H:%M:%S"
@@ -740,6 +803,28 @@ class Pylau(QMainWindow):
         self.logger.addHandler(text_edit_logger)
 
         self.logger.info("Aplicativo PyLau iniciado. 💚\n Registros:")
+
+    def logar_sftp(self, message):
+        self.logger.info(f"SFTP: {message}")
+
+    def sftp(self):
+        if not self.sftp_running:
+            self.sftpapp.start_server()
+            self.sftpapp.show_window()  # Adicione esta linha para mostrar a janela
+            self.start_sftp_button.setText("🔐 Parar Servidor SFTP")
+            self.sftp_running = True
+        else:
+            self.sftpapp.stop_server()
+            self.sftpapp.main_window.hide() # Adicione esta linha para esconder a janela
+            self.start_sftp_button.setText("🔐 Iniciar Servidor SFTP")
+            self.sftp_running = False
+
+    def closeEvent(self, event):
+        if self.sftp_running:
+            self.sftpapp.stop_server()
+            if self.sftpapp.server_thread:
+                self.sftpapp.server_thread.wait()
+        event.accept()
 
     def init_ui(self):
         self.setWindowIcon(QIcon(resource_path("icone.ico")))
@@ -800,6 +885,7 @@ class Pylau(QMainWindow):
         left_column_layout = QVBoxLayout()
         self.start_ftp_button = QPushButton("📁 Iniciar Servidor FTP", self)
         self.start_sftp_button = QPushButton("🔐 Iniciar Servidor SFTP", self)
+        self.start_sftp_button.clicked.connect(self.sftp)
         self.rtsp_button = QPushButton("👀 RTSP", self)
         self.rtmp_button = QPushButton("▶️ RTMP", self)
         self.check_ports_button = QPushButton("🔍 Checar Portas", self)
@@ -821,6 +907,7 @@ class Pylau(QMainWindow):
         self.alarm_button = QPushButton("📢 Alarme", self)
         self.snmp_button = QPushButton("🩺 SNMP", self)
         self.time_sync_button = QPushButton("⏱ Time Sync", self)
+        
         self.ia_button = QPushButton("🤖 I.A", self)
 
         right_column_layout.addWidget(self.encontrar_button)
@@ -883,6 +970,7 @@ class Pylau(QMainWindow):
 
         # Conectar os botões às funções correspondentes
         self.start_ftp_button.clicked.connect(self.iniciar_ftp_server)
+        self.start_sftp_button = QPushButton("🔐 Iniciar Servidor SFTP", self)
         self.start_sftp_button.clicked.connect(self.sftp)
         self.rtsp_button.clicked.connect(self.configurar_rtsp)
         self.check_ports_button.clicked.connect(self.abrir_port_checker_dialog)
@@ -892,6 +980,7 @@ class Pylau(QMainWindow):
         self.alarm_button.clicked.connect(self.start_alarm)
         self.ia_button.clicked.connect(self.start_ia)
         self.ajuda_button.clicked.connect(self.abrir_ajuda)
+        self.time_sync_button.clicked.connect(self.abrir_time_sync)
 
     def set_green_titlebar(self):
         hwnd = int(self.winId())
@@ -925,6 +1014,10 @@ class Pylau(QMainWindow):
         self.alarm_thread = AlarmThread(script_path)
         self.alarm_thread.start()
 
+    def abrir_time_sync(self):
+        dialog = TimeSyncDialog(self)
+        dialog.exec_() # Executa o diálogo modalmente
+
     def encontrar(self):
         script_path = os.path.join(os.path.dirname(__file__), "hunter.py")
         self.encontrar_thread = encontrarThread(script_path)
@@ -944,18 +1037,7 @@ class Pylau(QMainWindow):
                 # Usar o IP selecionado ao inicializar o servidor FTP
                 self.ftp_server_thread = FTPServerThread(host=ip_selecionado)
                 self.ftp_server_thread.start()
-                
 
-    def sftp(self):
-        # Defina o caminho para o sftp.py, considerando a execução em ambiente compilado
-        sftp_path = (
-            os.path.join(sys._MEIPASS, "sftp.py")
-            if hasattr(sys, "_MEIPASS")
-            else "sftp.py"
-        )
-
-        # Chama o backend do SFTP sem iniciar o QApplication
-        subprocess.run([sys.executable, sftp_path, "backend"], check=True)
 
     def configurar_rtsp(self):
         dialog = RTSPDialog()

@@ -5,7 +5,9 @@ import socket
 import time
 import logging
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QTextEdit, QPushButton, QWidget
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtGui import QTextCharFormat, QFont
+import threading
 
 # Função para obter o IP local da máquina
 def get_local_ip():
@@ -28,6 +30,10 @@ if not os.path.exists(RECEIVED_DIR):
     os.makedirs(RECEIVED_DIR)
 
 class StubServer(paramiko.ServerInterface):
+    def __init__(self, event_handler=None):
+        super().__init__()
+        self.event_handler = event_handler  # Adicionado para receber o event_handler
+
     def check_auth_password(self, username, password):
         # Autenticação de usuário e senha
         if username == "admin" and password == "@1234567":
@@ -52,6 +58,10 @@ class StubSFTPHandle(paramiko.SFTPHandle):
 
 class StubSFTPServer(paramiko.SFTPServerInterface):
     ROOT = RECEIVED_DIR
+
+    def __init__(self, transport, event_handler):
+        super().__init__(transport)
+        self.event_handler = event_handler
 
     def _realpath(self, path):
         return os.path.join(self.ROOT, path.lstrip('/'))
@@ -118,12 +128,24 @@ class StubSFTPServer(paramiko.SFTPServerInterface):
         fobj.filename = path
         fobj.readfile = f
         fobj.writefile = f
+
+        # Log de arquivo aberto/criado
+        if flags & os.O_CREAT:
+            self.event_handler.log_signal.emit(f"Arquivo criado: {path}")
+        elif flags & os.O_RDWR:
+            self.event_handler.log_signal.emit(f"Arquivo aberto para leitura/escrita: {path}")
+        elif flags & os.O_WRONLY:
+            self.event_handler.log_signal.emit(f"Arquivo aberto para escrita: {path}")
+        else:
+            self.event_handler.log_signal.emit(f"Arquivo aberto para leitura: {path}")
+
         return fobj
 
     def remove(self, path):
         path = self._realpath(path)
         try:
             os.remove(path)
+            self.event_handler.log_signal.emit(f"Arquivo removido: {path}")
         except OSError as e:
             return paramiko.SFTPServer.convert_errno(e.errno)
         return paramiko.SFTP_OK
@@ -133,6 +155,7 @@ class StubSFTPServer(paramiko.SFTPServerInterface):
         newpath = self._realpath(newpath)
         try:
             os.rename(oldpath, newpath)
+            self.event_handler.log_signal.emit(f"Arquivo renomeado de {oldpath} para {newpath}")
         except OSError as e:
             return paramiko.SFTPServer.convert_errno(e.errno)
         return paramiko.SFTP_OK
@@ -143,6 +166,7 @@ class StubSFTPServer(paramiko.SFTPServerInterface):
             os.mkdir(path)
             if attr is not None:
                 paramiko.SFTPServer.set_file_attr(path, attr)
+            self.event_handler.log_signal.emit(f"Diretório criado: {path}")
         except OSError as e:
             return paramiko.SFTPServer.convert_errno(e.errno)
         return paramiko.SFTP_OK
@@ -151,6 +175,7 @@ class StubSFTPServer(paramiko.SFTPServerInterface):
         path = self._realpath(path)
         try:
             os.rmdir(path)
+            self.event_handler.log_signal.emit(f"Diretório removido: {path}")
         except OSError as e:
             return paramiko.SFTPServer.convert_errno(e.errno)
         return paramiko.SFTP_OK
@@ -202,6 +227,9 @@ class SFTPServerThread(QThread):
         self.keyfile = keyfile
         self.level = level
         self.running = True
+        self.server_socket = None
+        self.stop_event = threading.Event()
+        self.active_transports = []  # Lista para manter as conexões ativas
 
     def run(self):
         logging.basicConfig(level=getattr(logging, self.level.upper(), logging.INFO))
@@ -209,55 +237,72 @@ class SFTPServerThread(QThread):
         local_ip = get_local_ip()
         self.log_signal.emit(f"Servidor SFTP iniciado em {local_ip}:{self.port}")
 
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(10)
-        server_socket.settimeout(1.0)  # Adicionado timeout para evitar bloqueio
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(10)
+        self.server_socket.settimeout(1.0)
 
-        while self.running:
+        while self.running and not self.stop_event.is_set():
             try:
-                conn, addr = server_socket.accept()
+                conn, addr = self.server_socket.accept()
+                conn.settimeout(None)
+
+                host_key = paramiko.RSAKey.generate(2048)
+                self.log_signal.emit(f"Chave RSA gerada: {host_key.get_base64()}")
+
+                transport = paramiko.Transport(conn)
+                transport.add_server_key(host_key)
+                server = StubServer(event_handler=self)
+                transport.set_subsystem_handler('sftp', paramiko.SFTPServer, StubSFTPServer, event_handler=self)
+
+                try:
+                    transport.start_server(server=server)
+                except paramiko.SSHException as e:
+                    self.log_signal.emit(f"Erro de autenticação: {e}")
+                    continue
+
+                channel = transport.accept()
+                if channel is None:
+                    self.log_signal.emit("Falha na autenticação.")
+                else:
+                    self.log_signal.emit(f"Cliente conectado: {addr}")
+                    self.active_transports.append(transport)  # Adiciona o transporte à lista
+
+                while transport.is_active() and self.running and not self.stop_event.is_set():
+                    time.sleep(0.5)
+
             except socket.timeout:
-                continue  # Permite que o loop continue sem travar
+                continue
             except Exception as e:
-                self.log_signal.emit(f"Erro no servidor: {e}")
+                if self.running:
+                    self.log_signal.emit(f"Erro no servidor: {e}")
                 break
 
-            host_key = paramiko.RSAKey.generate(2048)
-            transport = paramiko.Transport(conn)
-            transport.add_server_key(host_key)
-            transport.set_subsystem_handler('sftp', paramiko.SFTPServer, StubSFTPServer)
+        # Fechar todas as conexões ativas
+        for transport in self.active_transports:
+            if transport.is_active():
+                transport.close()
+        self.active_transports.clear()
 
-            server = StubServer()
-            try:
-                transport.start_server(server=server)
-            except paramiko.SSHException as e:
-                self.log_signal.emit(f"Erro de autenticação: {e}")
-                continue
-
-            channel = transport.accept()
-            if channel is None:
-                self.log_signal.emit("Falha na autenticação.")
-            else:
-                self.log_signal.emit(f"Cliente conectado: {addr}")
-
-            while transport.is_active() and self.running:
-                time.sleep(0.5)  # Reduzido para evitar consumo excessivo de CPU
-
-        server_socket.close()
+        self.server_socket.close()
         self.log_signal.emit("Servidor SFTP parado.")
 
-    def stop(self):
-        self.running = False
-        self.wait(1000)  # Espera um pouco antes de forçar a parada
-
 
     def stop(self):
         self.running = False
-        self.quit()
+        self.stop_event.set()  # Sinaliza o evento de parada
 
-# Aplicação PyQt5 para ser incorporada
+        # Fechar todas as conexões ativas
+        for transport in self.active_transports:
+            if transport.is_active():
+                transport.close()
+        self.active_transports.clear()
+
+        if self.server_socket:
+            self.server_socket.close()
+        self.wait()
+
 class SFTPApplication(QApplication):
     log_signal = pyqtSignal(str)
 
@@ -269,7 +314,7 @@ class SFTPApplication(QApplication):
     def init_ui(self):
         self.main_window = QMainWindow()
         self.main_window.setWindowTitle("Servidor SFTP")
-        self.main_window.resize(500, 400)  # Aumentei o tamanho para melhor visualização
+        self.main_window.resize(500, 400)
 
         # Centralizar a janela
         screen = QApplication.desktop().screenGeometry()
@@ -280,23 +325,23 @@ class SFTPApplication(QApplication):
         )
 
         # Cor de fundo verde escuro
-        self.main_window.setStyleSheet("background-color: #004000;")  # Verde escuro
+        self.main_window.setStyleSheet("background-color: #004000;")
 
         central_widget = QWidget()
         self.main_window.setCentralWidget(central_widget)
 
         layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(10, 10, 10, 10) # Adiciona margens
-        layout.setSpacing(10)  # Adiciona espaçamento
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
         # Console de log com fonte branca e fundo transparente
         self.log_console = QTextEdit()
         self.log_console.setReadOnly(True)
         self.log_console.setStyleSheet("""
             background-color: rgba(0, 0, 0, 50); /* Fundo preto transparente */
-            color: white;
-            font-family: 'Courier New', monospace;
-            font-size: 11pt;
+            color: #DCDCDC; /* Cinza claro para melhor contraste */
+            font-family: 'Arial', sans-serif; /* Fonte alterada para Arial */
+            font-size: 10pt;
             border: 1px solid #008000; /* Borda verde claro */
             border-radius: 5px;
             padding: 5px;
@@ -340,7 +385,7 @@ class SFTPApplication(QApplication):
 
         self.start_button.clicked.connect(self.start_server)
         self.stop_button.clicked.connect(self.stop_server)
-
+    
     def log_message(self, message):
         self.log_console.append(message)
 
@@ -349,6 +394,7 @@ class SFTPApplication(QApplication):
         port = 2222
         keyfile = None
         level = "INFO"
+
 
         self.server_thread = SFTPServerThread(host, port, keyfile, level)
         self.server_thread.log_signal.connect(self.log_message)
@@ -366,6 +412,42 @@ class SFTPApplication(QApplication):
         self.stop_button.setEnabled(False)
         self.log_message("Você pode fechar essa janela ou iniciar novamente.")
 
+    def log_message(self, message):
+        # Palavras-chave para destacar
+        keywords = ["Conectado", "Desconectado", "Chave RSA gerada", "Arquivo criado", "Arquivo aberto", "Arquivo removido", "Arquivo renomeado", "Diretório criado", "Diretório removido", "Erro", "Falha", "iniciado", "parado"]
+
+        # Formatação para palavras-chave
+        keyword_format = QTextCharFormat()
+        keyword_format.setFontWeight(QFont.Bold)
+        keyword_format.setForeground(Qt.yellow)  # Amarelo para destacar
+
+        # Formatação para outros destaques (ex: nomes de arquivos)
+        highlight_format = QTextCharFormat()
+        highlight_format.setForeground(Qt.green) # Azul claro
+
+        self.log_console.moveCursor(self.log_console.textCursor().End) # Mover o cursor para o final
+
+        parts = message.split(":")
+        if len(parts) > 1:
+            prefix = parts[0].strip()
+            if prefix in keywords:
+                self.log_console.setCurrentCharFormat(keyword_format)
+                self.log_console.insertPlainText(prefix + ":")
+                self.log_console.setCurrentCharFormat(QTextCharFormat()) # Resetar a formatação
+
+                # Tratar o restante da mensagem
+                remainder = ":".join(parts[1:]).strip()
+                if prefix == "Chave RSA gerada":
+                    self.log_console.insertPlainText(" " + remainder + "\n")
+                elif prefix in ["Arquivo criado", "Arquivo aberto", "Arquivo removido", "Arquivo renomeado", "Diretório criado", "Diretório removido"]:
+                    self.log_console.setCurrentCharFormat(highlight_format)
+                    self.log_console.insertPlainText(" " + remainder + "\n")
+                else:
+                    self.log_console.insertPlainText(" " + remainder + "\n")
+            else:
+                self.log_console.append(message)
+        else:
+            self.log_console.append(message)
     def show_window(self):
         self.main_window.show()
 

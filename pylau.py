@@ -442,10 +442,47 @@ class RTSPDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Configuração RTSP")
-        self.setGeometry(400, 400, 300, 200)
-        self.setStyleSheet("background-color: #cdffdc;")  ### COR DA JANELA
+        self.setGeometry(400, 400, 350, 250) # Aumentei um pouco a largura
+
+        # Estilo para o diálogo
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #004000; /* Verde escuro */
+                color: white;
+                font-family: 'Arial', sans-serif;
+            }
+            QLineEdit {
+                background-color: rgba(0, 0, 0, 50);
+                color: white;
+                border: 1px solid #008000;
+                border-radius: 3px;
+                padding: 5px;
+                selection-background-color: #71ff78;
+                selection-color: black;
+            }
+            QPushButton {
+                background-color: #006400;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 5px;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #008000;
+            }
+            QPushButton:pressed {
+                background-color: #00A000;
+            }
+            QLabel {
+                color: white;
+            }
+        """)
 
         self.layout = QFormLayout(self)
+        self.layout.setSpacing(10) # Espaçamento entre as linhas
+        self.layout.setContentsMargins(10, 10, 10, 10) # Margens
+
         self.usuario = QLineEdit(self)
         self.senha = QLineEdit(self)
         self.ip = QLineEdit(self)
@@ -465,8 +502,9 @@ class RTSPDialog(QDialog):
         ip_layout.addWidget(self.ip)
 
         # Botão para varredura de IP
-        self.varredura_btn = QPushButton("Varredura", self)
+        self.varredura_btn = QPushButton("🔍 Varredura", self) # Adicionado ícone
         self.varredura_btn.clicked.connect(self.abrir_janela_varredura)
+        self.varredura_btn.setFixedWidth(100) # Largura fixa para o botão
         ip_layout.addWidget(self.varredura_btn)
 
         self.layout.addRow("IP:", ip_layout)
@@ -481,12 +519,16 @@ class RTSPDialog(QDialog):
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
-        self.button_box.accepted.connect(
-            self.accept
-        )  # Conectar o botão OK para aceitar o diálogo
-        self.button_box.rejected.connect(
-            self.reject
-        )  # Conectar o botão Cancelar para rejeitar o diálogo
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+
+        # Estilo para os botões OK e Cancelar
+        self.button_box.setStyleSheet("""
+            QDialogButtonBox QPushButton {
+                min-width: 80px; /* Largura mínima para os botões */
+            }
+        """)
+
         self.layout.addWidget(self.button_box)
 
         self.setLayout(self.layout)
@@ -885,7 +927,6 @@ class Pylau(QMainWindow):
         left_column_layout = QVBoxLayout()
         self.start_ftp_button = QPushButton("📁 Iniciar Servidor FTP", self)
         self.start_sftp_button = QPushButton("🔐 Iniciar Servidor SFTP", self)
-        self.start_sftp_button.clicked.connect(self.sftp)
         self.rtsp_button = QPushButton("👀 RTSP", self)
         self.rtmp_button = QPushButton("▶️ RTMP", self)
         self.check_ports_button = QPushButton("🔍 Checar Portas", self)
@@ -970,7 +1011,6 @@ class Pylau(QMainWindow):
 
         # Conectar os botões às funções correspondentes
         self.start_ftp_button.clicked.connect(self.iniciar_ftp_server)
-        self.start_sftp_button = QPushButton("🔐 Iniciar Servidor SFTP", self)
         self.start_sftp_button.clicked.connect(self.sftp)
         self.rtsp_button.clicked.connect(self.configurar_rtsp)
         self.check_ports_button.clicked.connect(self.abrir_port_checker_dialog)

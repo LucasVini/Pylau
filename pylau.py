@@ -57,6 +57,8 @@ from PyQt5.QtWidgets import (
     QMainWindow, QPushButton, QVBoxLayout, QDialog, QRadioButton,
     QButtonGroup, QLabel, QDialogButtonBox, QWidget
 )
+from PyQt5.QtGui import QPalette, QColor
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget, QInputDialog, QLineEdit
 
 
 import paramiko.kex_group14
@@ -77,6 +79,12 @@ from NetSDK.SDK_Struct import (
     NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY, NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY,
     CB_FUNCTYPE
 )
+
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+import requests
 
 from timex import TimeSyncWidget # Importa o novo widget
 
@@ -818,6 +826,149 @@ class iaThread(QThread):
         # Executa o outro script Python
         subprocess.run(["python", self.script_path], check=True)
 
+class ResetDialog(QDialog):
+    def __init__(self, parent=None):
+        super(ResetDialog, self).__init__(parent)
+
+        self.setWindowTitle("Opções de Reset")
+
+        # Define o tema verde escuro e fonte branca
+        palette = self.palette()
+        palette.setColor(QPalette.Window, QColor(0, 50, 0))  # Verde escuro
+        palette.setColor(QPalette.WindowText, Qt.white)  # Branco
+        self.setPalette(palette)
+
+        layout = QVBoxLayout(self)
+
+        label = QLabel("Selecione uma opção de reset:")
+        layout.addWidget(label)
+
+        button_factory = QPushButton("Padrão de Fábrica")
+        button_factory.clicked.connect(self.padrao_fabrica)  # Conecta ao método padrao_fabrica
+        layout.addWidget(button_factory)
+
+        button_reset = QPushButton("Reiniciar") # Nome do botão alterado
+        button_reset.clicked.connect(self.reset)  # Conecta ao método reset
+        layout.addWidget(button_reset)
+
+    def padrao_fabrica(self):
+        # Lógica para o reset de fábrica (movida para dentro do diálogo)
+        ip, ok_ip = QInputDialog.getText(self, "Padrão de Fábrica", "Digite o IP do DVR:")
+
+        if ok_ip and ip:
+            user, ok_user = QInputDialog.getText(self, "Padrão de Fábrica", "Digite o usuário do DVR:")
+
+            if ok_user and user:
+                password, ok_password = QInputDialog.getText(self, "Padrão de Fábrica", "Digite a senha do DVR:", QLineEdit.Password)
+
+                if ok_password and password:
+                    driver = None
+
+                    try:
+                        url = f"http://{user}:{password}@{ip}/cgi-bin/magicBox.cgi?action=resetSystemEx&type=0"
+
+                        chrome_options = Options()
+                        chrome_options.add_argument("--headless")
+                        chrome_options.add_argument("--disable-gpu")
+                        chrome_options.add_argument("--no-sandbox")
+
+                        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+                        driver.get(url)
+
+                        if "OK" in driver.page_source:
+                            QMessageBox.information(self, "Sucesso", f"O DVR com IP {ip} foi resetado com sucesso!")
+                        else:
+                            QMessageBox.warning(self, "Falha", "Falha ao resetar o DVR. Verifique as credenciais e tente novamente.")
+
+                    except Exception as e:
+                        QMessageBox.critical(self, "Erro", f"Erro ao acessar o DVR: {str(e)}")
+                    finally:
+                        if driver:
+                            driver.quit()
+                else:
+                    QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+            else:
+                QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+        else:
+            QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+        self.accept()  # Fecha o diálogo após o reset (ou cancelamento)
+
+    def reset(self):
+         # Lógica para o reset (usando o link de reboot)
+        ip, ok_ip = QInputDialog.getText(self, "Reiniciar", "Digite o IP do DVR:")
+
+        if ok_ip and ip:
+            user, ok_user = QInputDialog.getText(self, "Reiniciar", "Digite o usuário do DVR:")
+
+            if ok_user and user:
+                password, ok_password = QInputDialog.getText(self, "Reiniciar", "Digite a senha do DVR:", QLineEdit.Password)
+
+                if ok_password and password:
+                    driver = None
+
+                    try:
+                        url = f"http://{user}:{password}@{ip}/cgi-bin/magicBox.cgi?action=reboot"  # URL de reboot
+
+                        chrome_options = Options()
+                        chrome_options.add_argument("--headless")
+                        chrome_options.add_argument("--disable-gpu")
+                        chrome_options.add_argument("--no-sandbox")
+
+                        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+                        driver.get(url)
+
+                        # A resposta do reboot pode variar, adaptamos para procurar um texto comum
+                        if "OK" in driver.page_source or "Success" in driver.page_source or "rebooting" in driver.page_source:  # Adapte conforme a resposta do seu DVR
+                            QMessageBox.information(self, "Sucesso", f"O DVR com IP {ip} foi reiniciado com sucesso!")
+                        else:
+                           QMessageBox.warning(self, "Falha", f"Falha ao reiniciar o DVR. Resposta: {driver.page_source}. Verifique as credenciais e tente novamente.")
+
+
+                    except Exception as e:
+                        QMessageBox.critical(self, "Erro", f"Erro ao acessar o DVR: {str(e)}")
+                    finally:
+                        if driver:
+                            driver.quit()
+                else:
+                    QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+            else:
+                QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+        else:
+            QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+        self.accept()
+
+
+class FirmwareUpgrader(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def upload_firmware(self, server_ip, username, password):  # Agora recebe IP, usuário e senha
+        options = QFileDialog.Options()
+        filepath, _ = QFileDialog.getOpenFileName(self, "Selecionar Arquivo Firmware (.bin)", "", "Firmware Files (*.bin)", options=options)
+
+        if filepath:
+            try:
+                # URL com as credenciais (usando o formato correto: ip:usuario:senha)
+                url = f"http://{username}:{password}@{server_ip}/cgi-bin/upgrader.cgi?action=uploadFirmware"
+
+                with open(filepath, "rb") as file:
+                    files = {"upgrade": (os.path.basename(filepath), file, "application/octet-stream")}
+
+                    response = requests.post(url, files=files)
+
+                if response.status_code == 200:
+                    QMessageBox.information(self, "Sucesso", "Firmware enviado com sucesso!")
+
+                else:
+                    QMessageBox.warning(self, "Erro", f"Falha no envio do firmware. Status code: {response.status_code}. Resposta: {response.text}")
+
+            except requests.exceptions.RequestException as e:
+                QMessageBox.critical(self, "Erro", f"Erro na requisição: {e}")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Erro geral: {e}")
+        else:
+            QMessageBox.information(self, "Informação", "Nenhum arquivo selecionado.")
+
 
 ### AQUI FICA A DEFINIÇÃO DA PARTE VISUAL DA JANELA PRINCIPAL
 class Pylau(QMainWindow):
@@ -1063,10 +1214,23 @@ class Pylau(QMainWindow):
         self.encontrar_thread = encontrarThread(script_path)
         self.encontrar_thread.start()
 
-    def start_ia(self):
-        script_path = os.path.join(os.path.dirname(__file__), "genia.py")
-        self.ia_thread = iaThread(script_path)
-        self.ia_thread.start()
+    def start_ia(self): # Função renomeada para refletir o uso
+        # Diálogos para obter IP, usuário e senha
+        ip, ok_ip = QInputDialog.getText(self, "Atualização de Firmware", "Digite o IP do dispositivo:")
+        if ok_ip and ip:
+            username, ok_username = QInputDialog.getText(self, "Atualização de Firmware", "Digite o usuário:")
+            if ok_username and username:
+                password, ok_password = QInputDialog.getText(self, "Atualização de Firmware", "Digite a senha:", QLineEdit.Password)
+                if ok_password and password:
+                    upgrader = FirmwareUpgrader(self)
+                    upgrader.upload_firmware(ip, username, password) # Passa os dados para o upload
+                else:
+                     QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+            else:
+                 QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+        else:
+             QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
+
 
     def iniciar_ftp_server(self):
         dialog = AdapterSelectionDialog(self)
@@ -1078,6 +1242,9 @@ class Pylau(QMainWindow):
                 self.ftp_server_thread = FTPServerThread(host=ip_selecionado)
                 self.ftp_server_thread.start()
 
+    def reset_dvr(self):
+        dialog = ResetDialog(self)
+        dialog.exec_()  # Abre o diálogo e aguarda a interação do usuário
 
     def configurar_rtsp(self):
         dialog = RTSPDialog()
@@ -1113,62 +1280,6 @@ class Pylau(QMainWindow):
                 self.checar_portas(ip)
             else:
                 QMessageBox.warning(self, "Erro", "Endereço IP não pode ser vazio!")
-
-    ### AUTOMAÇÃO DE PADRÃO DE FÁBRICA
-
-    def reset_dvr(self):
-        # Importando Selenium
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.chrome.service import Service
-        from PyQt5.QtWidgets import QMessageBox, QInputDialog, QLineEdit
-        from webdriver_manager.chrome import ChromeDriverManager
-        # Diálogo para pedir o IP
-        ip, ok_ip = QInputDialog.getText(self, "Reset DVR", "Digite o IP do DVR:")
-
-        if ok_ip and ip:
-            # Diálogo para pedir o usuário
-            user, ok_user = QInputDialog.getText(self, "Reset DVR", "Digite o usuário do DVR:")
-
-            if ok_user and user:
-                # Diálogo para pedir a senha
-                password, ok_password = QInputDialog.getText(self, "Reset DVR", "Digite a senha do DVR:", QLineEdit.Password)
-
-                if ok_password and password:
-                    driver = None  # Inicializando a variável driver
-
-                    try:
-                        # URL com as credenciais
-                        url = f"http://{user}:{password}@{ip}/cgi-bin/magicBox.cgi?action=resetSystemEx&type=0"
-
-                        # Configuração do Selenium WebDriver
-                        chrome_options = Options()
-                        chrome_options.add_argument("--headless")
-                        chrome_options.add_argument("--disable-gpu")
-                        chrome_options.add_argument("--no-sandbox")
-
-                        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-
-                        # Acessar o link do DVR com a URL contendo as credenciais
-                        driver.get(url)
-
-                        # Verificar se o reset foi bem-sucedido
-                        if "OK" in driver.page_source:
-                            QMessageBox.information(self, "Sucesso", f"O DVR com IP {ip} foi resetado com sucesso!")
-                        else:
-                            QMessageBox.warning(self, "Leia:", "Falha ao resetar o DVR. Verifique as credenciais e tente novamente.")
-
-                    except Exception as e:
-                        QMessageBox.critical(self, "Erro", f"Erro ao acessar o DVR: {str(e)}")
-                    finally:
-                        if driver:
-                            driver.quit()
-                else:
-                    QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
-            else:
-                QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
-        else:
-            QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
 
     # Verificador de portas abertas
     def checar_portas(self, ip):

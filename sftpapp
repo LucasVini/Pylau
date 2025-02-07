@@ -235,7 +235,11 @@ class SFTPServerThread(QThread):
         logging.basicConfig(level=getattr(logging, self.level.upper(), logging.INFO))
 
         local_ip = get_local_ip()
-        self.log_signal.emit(f"Servidor SFTP iniciado em {local_ip}:{self.port}")
+        self.log_signal.emit(f"Servidor SFTP iniciado em {local_ip}:{self.port}\n")
+        self.log_signal.emit("Credenciais de acesso:")
+        self.log_signal.emit("Usuário: admin")  
+        self.log_signal.emit("Senha: @1234567\n\n")  
+
 
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)

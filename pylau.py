@@ -86,9 +86,8 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import requests
 
-from timex import TimeSyncWidget # Importa o novo widget
-
 from sftpapp import SFTPApplication  
+from tempo import TimeSyncDialog
 
 # Configuração do logger
 logger = logging.getLogger("SFTPServerLogger")
@@ -98,75 +97,33 @@ formatter = logging.Formatter(
 )
 
 
-# Configurar o logging
+class QTextEditLogger(logging.Handler):
+    def __init__(self, text_edit):
+        super().__init__()
+        self.text_edit = text_edit
+        self.setFormatter(formatter)  # Usar o formatter global
+
+    def emit(self, record):
+        msg = self.format(record)
+        self.text_edit.append(msg)
+
+# Configuração do logger principal (para a janela principal)
+logger = logging.getLogger("PylauLogger")  # Logger principal
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter(
+    "[%(levelname)s %(asctime)s] %(message)s", "%d-%m-%Y %H:%M:%S"
+)
+
+# Configurar o logging (agora apenas para o console, o QTextEditLogger será adicionado na classe principal)
 logging.basicConfig(
-    level=logging.DEBUG,  # Exibe todas as mensagens de log (DEBUG, INFO, WARNING, ERROR)
+    level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.StreamHandler(sys.stdout),  # Exibe logs no console
+        logging.StreamHandler(sys.stdout),  # Logs no console
     ],
 )
 
 logging.info("O programa iniciou com sucesso.")
-
-
-## TIME SDK
-class TimeSyncDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Sincronizar Horário")
-        self.time_sync_widget = TimeSyncWidget(self) # Instancia o widget passando o dialogo como pai
-        layout = QVBoxLayout()
-        layout.addWidget(self.time_sync_widget)
-        self.setLayout(layout)
-
-        self.time_sync_widget.Login_pushButton.clicked.connect(self.handle_login)
-        self.time_sync_widget.GetTime_pushButton.clicked.connect(self.handle_get_time)
-        self.time_sync_widget.SetTime_pushButton.clicked.connect(self.handle_set_time)
-
-    def handle_login(self):
-        ip = self.time_sync_widget.IP_lineEdit.text()
-        port = int(self.time_sync_widget.Port_lineEdit.text())
-        username = self.time_sync_widget.Name_lineEdit.text()
-        password = self.time_sync_widget.Pwd_lineEdit.text()
-        success, error_msg = self.time_sync_widget.login(ip, port, username, password)
-        if not success:
-            QMessageBox.warning(self, "Erro de Login", error_msg)
-        else:
-            self.time_sync_widget.Login_pushButton.setText("Logout") # Muda o texto do botao
-            QMessageBox.information(self, "Login", "Login efetuado com sucesso")
-            self.time_sync_widget.IP_lineEdit.setEnabled(False)
-            self.time_sync_widget.Port_lineEdit.setEnabled(False)
-            self.time_sync_widget.Name_lineEdit.setEnabled(False)
-            self.time_sync_widget.Pwd_lineEdit.setEnabled(False)
-            self.time_sync_widget.Login_pushButton.clicked.disconnect(self.handle_login)
-            self.time_sync_widget.Login_pushButton.clicked.connect(self.handle_logout)
-    
-    def handle_logout(self):
-        self.time_sync_widget.logout()
-        self.time_sync_widget.Login_pushButton.setText("Entrar")
-        self.time_sync_widget.IP_lineEdit.setEnabled(True)
-        self.time_sync_widget.Port_lineEdit.setEnabled(True)
-        self.time_sync_widget.Name_lineEdit.setEnabled(True)
-        self.time_sync_widget.Pwd_lineEdit.setEnabled(True)
-        self.time_sync_widget.Login_pushButton.clicked.disconnect(self.handle_logout)
-        self.time_sync_widget.Login_pushButton.clicked.connect(self.handle_login)
-
-    def handle_get_time(self):
-        device_time, error_msg = self.time_sync_widget.get_device_time()
-        if device_time is None:
-            QMessageBox.warning(self, "Erro ao obter tempo", error_msg)
-        else:
-            self.time_sync_widget.Time_dateTimeEdit.setDateTime(device_time)
-
-    def handle_set_time(self):
-        date_time = self.time_sync_widget.Time_dateTimeEdit.dateTime()
-        success, error_msg = self.time_sync_widget.set_device_time(date_time)
-        if not success:
-            QMessageBox.warning(self, "Erro ao configurar tempo", error_msg)
-        else:
-            QMessageBox.information(self, "Sucesso", "Tempo configurado com sucesso")
-
 
 
 # Classe base para threads que executam scripts
@@ -297,7 +254,7 @@ class PortCheckerDialog(QDialog):
             button_layout
         )  # Adicionar o layout dos botões ao layout principal
 
-        # Conexão dos botões
+        # Conexão dos botões    
         self.ok_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
 
@@ -622,18 +579,24 @@ class AdapterSelectionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.selected_adapter = None
+        self.oldPos = None  # Para arrastar a janela
         self.init_ui()
 
+
     def init_ui(self):
-        
         self.setWindowTitle("Seleção de Adaptador de Rede")
         self.resize(300, 200)
-        
+
+        # --- Configuração para Blur e Janela Sem Borda ---
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)  # Sem borda
+        self.setAttribute(Qt.WA_TranslucentBackground)      # Fundo transparente
+        self.setStyleSheet("background:transparent;")         # Importante para o blur
 
         layout = QVBoxLayout(self)
 
         # Label de instrução
         instruction_label = QLabel("Selecione um adaptador de rede:")
+        instruction_label.setStyleSheet("color: white;")  # Texto branco
         layout.addWidget(instruction_label)
 
         # Grupo de botões para os adaptadores
@@ -645,18 +608,51 @@ class AdapterSelectionDialog(QDialog):
 
         # Botão "OK"
         self.ok_button = QPushButton("OK", self)
+        self.ok_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(0, 100, 0, 150); /* Verde com transparência */
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """)
         self.ok_button.clicked.connect(self.confirm_selection)
         layout.addWidget(self.ok_button)
+
+
 
     def populate_adapters(self, layout):
         adapters = self.get_network_adapters()
         if not adapters:
             error_label = QLabel("Nenhum adaptador de rede disponível.")
+            error_label.setStyleSheet("color: white;")  # Texto branco
             layout.addWidget(error_label)
             return
 
         for idx, (name, ip) in enumerate(adapters.items()):
             radio_button = QRadioButton(f"{name} - {ip}")
+            radio_button.setStyleSheet("""
+                QRadioButton {
+                    color: white;
+                }
+                QRadioButton::indicator {
+                    width: 13px;
+                    height: 13px;
+                }
+                QRadioButton::indicator:checked {
+                    background-color: rgba(0, 180, 0, 255);  /* Verde mais claro */
+                    border: 2px solid rgba(0, 100, 0, 255);  /* Borda verde escura */
+                }
+                QRadioButton::indicator:unchecked {
+                    background-color: rgba(50, 50, 50, 100);  /* Cinza transparente */
+                    border: 2px solid rgba(100, 100, 100, 200);
+                }
+
+            """)
             self.button_group.addButton(radio_button, id=idx)
             layout.addWidget(radio_button)
 
@@ -678,6 +674,29 @@ class AdapterSelectionDialog(QDialog):
         else:
             QMessageBox.warning(self, "Erro", "Por favor, selecione um adaptador de rede.")
 
+    def showEvent(self, event):
+        """Chamado quando a janela é exibida.  Aplica o efeito de blur."""
+        super().showEvent(event)
+        hwnd = int(self.winId())
+        enable_blur_effect(hwnd)  # Aplica o efeito de blur
+
+    # --- Métodos para arrastar a janela (já que não tem barra de título) ---
+    def mousePressEvent(self, event):
+        """Captura a posição inicial do mouse no clique."""
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        """Move a janela se o botão esquerdo estiver pressionado."""
+        if self.oldPos is not None and event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.oldPos)
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        """Reseta a posição antiga quando o botão do mouse é solto."""
+        if event.button() == Qt.LeftButton:
+            self.oldPos = None
 
 class VarreduraIPWindow(QDialog):
     def __init__(self, parent=None):
@@ -938,37 +957,6 @@ class ResetDialog(QDialog):
         self.accept()
 
 
-class FirmwareUpgrader(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-    def upload_firmware(self, server_ip, username, password):  # Agora recebe IP, usuário e senha
-        options = QFileDialog.Options()
-        filepath, _ = QFileDialog.getOpenFileName(self, "Selecionar Arquivo Firmware (.bin)", "", "Firmware Files (*.bin)", options=options)
-
-        if filepath:
-            try:
-                # URL com as credenciais (usando o formato correto: ip:usuario:senha)
-                url = f"http://{username}:{password}@{server_ip}/cgi-bin/upgrader.cgi?action=uploadFirmware"
-
-                with open(filepath, "rb") as file:
-                    files = {"upgrade": (os.path.basename(filepath), file, "application/octet-stream")}
-
-                    response = requests.post(url, files=files)
-
-                if response.status_code == 200:
-                    QMessageBox.information(self, "Sucesso", "Firmware enviado com sucesso!")
-
-                else:
-                    QMessageBox.warning(self, "Erro", f"Falha no envio do firmware. Status code: {response.status_code}. Resposta: {response.text}")
-
-            except requests.exceptions.RequestException as e:
-                QMessageBox.critical(self, "Erro", f"Erro na requisição: {e}")
-            except Exception as e:
-                QMessageBox.critical(self, "Erro", f"Erro geral: {e}")
-        else:
-            QMessageBox.information(self, "Informação", "Nenhum arquivo selecionado.")
-
 
 ### AQUI FICA A DEFINIÇÃO DA PARTE VISUAL DA JANELA PRINCIPAL
 class Pylau(QMainWindow):
@@ -1206,8 +1194,9 @@ class Pylau(QMainWindow):
         self.alarm_thread.start()
 
     def abrir_time_sync(self):
-        dialog = TimeSyncDialog(self)
-        dialog.exec_() # Executa o diálogo modalmente
+        """Abre o diálogo TimeSyncDialog."""
+        dialog = TimeSyncDialog(self)  #
+        dialog.exec_() 
 
     def encontrar(self):
         script_path = os.path.join(os.path.dirname(__file__), "hunter.py")

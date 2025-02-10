@@ -231,36 +231,96 @@ class PortCheckerThread(QThread):
 
 class PortCheckerDialog(QDialog):
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet("background-color: #cdffdc;")  ### COR DA JANELA
+        super().__init__(parent)  # Importante: passe 'parent' para o construtor da classe base
+        self.oldPos = None
+        self.init_ui()
+
+
+    def init_ui(self):
         self.setWindowTitle("Checar Portas")
-        self.setGeometry(400, 200, 200, 80)
+        self.setGeometry(400, 200, 300, 150)
 
-        # Layout do diálogo
-        layout = QVBoxLayout(self)  # Usar QVBoxLayout para organizar verticalmente
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background:transparent;")
 
-        # Campo de texto para IP
+        layout = QVBoxLayout(self)
         self.ip_input = QLineEdit(self)
-        self.ip_input.setPlaceholderText("Digite o endereço IP")  # Texto de sugestão
-        layout.addWidget(self.ip_input)  # Adicionar o campo de texto ao layout
+        self.ip_input.setPlaceholderText("Digite o endereço IP")
+        self.ip_input.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 30);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 80);
+                border-radius: 4px;
+                padding: 5px;
+            }
+        """)
+        layout.addWidget(self.ip_input)
 
-        # Botões OK e Cancelar
-        button_layout = QHBoxLayout()  # Layout horizontal para os botões
+        button_layout = QHBoxLayout()
         self.ok_button = QPushButton("OK", self)
         self.cancel_button = QPushButton("Cancelar", self)
+        button_style = """
+            QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """
+        self.ok_button.setStyleSheet(button_style)
+        self.cancel_button.setStyleSheet(button_style)
         button_layout.addWidget(self.ok_button)
         button_layout.addWidget(self.cancel_button)
-        layout.addLayout(
-            button_layout
-        )  # Adicionar o layout dos botões ao layout principal
+        layout.addLayout(button_layout)
 
-        # Conexão dos botões    
         self.ok_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
 
     def get_ip(self):
         return self.ip_input.text()
 
+    def showEvent(self, event):
+        """Aplica o blur e centraliza a janela."""
+        super().showEvent(event)
+        hwnd = int(self.winId())
+        enable_blur_effect(hwnd)
+        self.center()  # Chama a função center() para centralizar
+
+    def center(self):
+        """Centraliza o diálogo em relação à janela pai (se houver)."""
+        if self.parentWidget():  # Verifica se existe uma janela pai
+            parent_rect = self.parentWidget().geometry()  # Geometria da janela pai
+            dialog_rect = self.geometry()  # Geometria do diálogo
+
+            # Calcula a posição central
+            center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
+            center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
+
+            self.move(center_x, center_y)  # Move o diálogo para o centro
+        else:
+            # Se não houver pai, centraliza na tela
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if self.oldPos is not None and event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.oldPos)
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = None
 
 class QTextEditLogger(logging.Handler):
     def __init__(self, text_edit):

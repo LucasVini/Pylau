@@ -1,66 +1,43 @@
-import os
 import sys
+import os
 import logging
 import socket
-import cv2
 import subprocess
-import psutil
+import ctypes
+import time  # Usado em FTPServerThread e potencialmente em outros lugares
+
+# Módulos externos
+import cv2  # Usado para RTSP
+import psutil  # Usado para obter informações de rede
+import paramiko  # Para SFTP (e possivelmente SSH, se você usar)
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+import requests  # Para requisições HTTP (reset de fábrica)
+
+# PyQt5 - Agrupando imports
 from PyQt5.QtWidgets import (
-    QApplication,
-    QWidget,
-    QVBoxLayout,
-    QPushButton,
-    QTextEdit,
-    QHBoxLayout,
-    QLabel,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QDialogButtonBox,
+    QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit,
+    QHBoxLayout, QLabel, QDialog, QFormLayout, QLineEdit,
+    QDialogButtonBox, QSystemTrayIcon, QMenu, QAction,
+    QPlainTextEdit, QListWidget, QInputDialog, QMessageBox,
+    QMainWindow, QRadioButton, QButtonGroup, QFileDialog,
+    QGraphicsBlurEffect
 )
-from PyQt5.QtCore import QThread, QTimer, Qt, pyqtSignal
-from PyQt5.QtGui import QMovie, QImage, QPixmap
+from PyQt5.QtCore import (
+    QThread, QTimer, Qt, pyqtSignal, QPoint, QRect
+)
+from PyQt5.QtGui import (
+    QMovie, QImage, QPixmap, QIcon, QPalette, QColor
+)
+
+# pyftpdlib - Agrupando imports
 from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (
-    QSystemTrayIcon,
-    QMenu,
-    QAction,
-    QPlainTextEdit,
-    QDialog,
-    QListWidget,
-    QInputDialog,
-)
-from PyQt5.QtWidgets import (
-    QApplication,
-    QWidget,
-    QVBoxLayout,
-    QPushButton,
-    QTextEdit,
-    QLineEdit,
-    QLabel,
-)
-from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtWidgets import QVBoxLayout, QWidget, QPushButton, QInputDialog, QMessageBox
-from PyQt5.QtWidgets import QPushButton, QGraphicsBlurEffect
 
-import paramiko
-import socket
-import time
-import argparse
-import threading
-import ctypes
-
-from PyQt5.QtWidgets import (
-    QMainWindow, QPushButton, QVBoxLayout, QDialog, QRadioButton,
-    QButtonGroup, QLabel, QDialogButtonBox, QWidget
-)
-from PyQt5.QtGui import QPalette, QColor
-from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget, QInputDialog, QLineEdit
-
-
+# paramiko - Agrupando (se você realmente usar todos)
 import paramiko.kex_group14
 import paramiko.kex_group16
 import paramiko.kex_ecdh_nist
@@ -70,7 +47,7 @@ import paramiko.primes
 import paramiko.rsakey
 import paramiko.ecdsakey
 
-# Importações NetSDK (movidas para o topo para melhor organização)
+# NetSDK - Organizando (se você usar todos)
 from NetSDK.NetSDK import NetClient
 from NetSDK.SDK_Callback import fDisConnect, fHaveReConnect
 from NetSDK.SDK_Enum import EM_DEV_CFG_TYPE, EM_LOGIN_SPAC_CAP_TYPE
@@ -80,13 +57,8 @@ from NetSDK.SDK_Struct import (
     CB_FUNCTYPE
 )
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-import requests
-
-from sftpapp import SFTPApplication  
+# módulos/classes
+from sftpapp import SFTPApplication
 from tempo import TimeSyncDialog
 
 # Configuração do logger
@@ -384,45 +356,66 @@ class FTPServerThread(QThread):
 class AjudaDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.oldPos = None  # Para arrastar a janela
+        self.init_ui()
+
+    def init_ui(self):
         self.setWindowTitle("Ajuda")
+        self.setGeometry(100, 100, 450, 600)  # Tamanho adequado
+
+        # --- Configuração para Blur e Janela Sem Borda ---
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background:transparent;") # Garante a transparencia
 
-        # Layout principal
         layout = QVBoxLayout(self)
 
-        # Botão de fechar
-        fechar_btn = QPushButton("Fechar", self)
-        fechar_btn.setStyleSheet(
-            "background-color: red; color: white; font-weight: bold; border: none;"
-        )
-        fechar_btn.clicked.connect(self.close)
+        # --- Botão "OK" (em vez de "Fechar") ---
+        ok_button = QPushButton("OK", self)
+        button_style = """
+            QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """
+        ok_button.setStyleSheet(button_style)
+        ok_button.clicked.connect(self.accept)  # Conecta a self.accept()
 
-        # Layout para alinhar o botão de fechar à direita
-        top_layout = QHBoxLayout()
-        top_layout.addWidget(fechar_btn, alignment=Qt.AlignRight)
-        layout.addLayout(top_layout)
+        # --- Layout para o botão OK (centralizado) ---
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()  # Adiciona espaço flexível à esquerda
+        button_layout.addWidget(ok_button)
+        button_layout.addStretch()  # Adiciona espaço flexível à direita
+        layout.addLayout(button_layout)  # Adiciona o layout do botão ao layout principal
+
 
         # Texto de ajuda
         ajuda_texto = QPlainTextEdit(self)
         ajuda_texto.setReadOnly(True)
         ajuda_texto.setPlainText(
-            """\
+            """
         Bem-vindo ao PyLau - Python Local Access Utillity - beta (0.9)
-        
+
         Este aplicativo foi desenvolvido inicialmente para permitir a transferência de arquivos utilizando protocolo FTP e SFTP hospedando servidor localmente.
-        
+
         Funcionalidades:
-        - ✅Iniciar Servidor FTP 
-        - ❗️Iniciar Servidor SFTP: (em testes). 
-        - ✅Visualização RTSP: Acesse de forma simplificada uma visualização de stream RTSP. 
+        - ✅Iniciar Servidor FTP
+        - ❗️Iniciar Servidor SFTP: (em testes).
+        - ✅Visualização RTSP: Acesse de forma simplificada uma visualização de stream RTSP.
         - ✅Verificador de IP's na rede local.
         - ✅Recuperação de Padrão de Fábrica.
 
         Se você precisar de assistência, consulte a documentação ou entre em contato com Lucas Vinicius de Oliveira (Vinioli).
-        
+
         Obrigado por usar PyLau!
-        
+
         GNU GPL v3
 
         Os fundamentos da GPL
@@ -435,33 +428,40 @@ class AjudaDialog(QDialog):
         """
         )
         ajuda_texto.setStyleSheet(
-            "color: white; background: transparent; font-size: 14px;"
+            "color: white; background: transparent; font-size: 14px; border: none;"  # Sem borda
         )
-
-        # Adicionando o texto ao layout principal
-        layout.addWidget(ajuda_texto)
-        self.setLayout(layout)
+        layout.addWidget(ajuda_texto) # Adicionando antes do botão
 
     def showEvent(self, event):
-        # Centralizar a janela em relação à janela principal
-        if self.parent():
-            main_geometry = self.parent().geometry()
-            x = main_geometry.x() + (main_geometry.width() - self.width()) // 2
-            y = main_geometry.y() + (main_geometry.height() - self.height()) // 2
-            self.move(x, y)
-
-        hwnd = int(self.winId())  # Ativa o efeito de blur
+        super().showEvent(event)
+        hwnd = int(self.winId())
         enable_blur_effect(hwnd)
+        self.center()  # Centraliza após aplicar o blur
 
-    # Adicionar funcionalidade de arraste da janela
+    def center(self):
+        if self.parentWidget():
+            parent_rect = self.parentWidget().geometry()
+            dialog_rect = self.geometry()
+            center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
+            center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
+            self.move(center_x, center_y)
+        else:
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
     def mousePressEvent(self, event):
-        self.oldPos = event.globalPos()
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
 
     def mouseMoveEvent(self, event):
-        delta = QPoint(event.globalPos() - self.oldPos)
-        self.move(self.x() + delta.x(), self.y() + delta.y())
-        self.oldPos = event.globalPos()
+        if self.oldPos is not None and event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.oldPos)
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.oldPos = event.globalPos()
 
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = None
 
 class RTSPDialog(QDialog):
     def __init__(self):
@@ -639,124 +639,130 @@ class AdapterSelectionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.selected_adapter = None
-        self.oldPos = None  # Para arrastar a janela
+        self.oldPos = None
         self.init_ui()
-
 
     def init_ui(self):
         self.setWindowTitle("Seleção de Adaptador de Rede")
         self.resize(300, 200)
-
-        # --- Configuração para Blur e Janela Sem Borda ---
-        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)  # Sem borda
-        self.setAttribute(Qt.WA_TranslucentBackground)      # Fundo transparente
-        self.setStyleSheet("background:transparent;")         # Importante para o blur
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background:transparent;")
 
         layout = QVBoxLayout(self)
 
-        # Label de instrução
         instruction_label = QLabel("Selecione um adaptador de rede:")
-        instruction_label.setStyleSheet("color: white;")  # Texto branco
+        instruction_label.setStyleSheet("color: white;")
         layout.addWidget(instruction_label)
 
-        # Grupo de botões para os adaptadores
         self.button_group = QButtonGroup(self)
         self.button_group.setExclusive(True)
-
-        # Obter adaptadores de rede e endereços IP
         self.populate_adapters(layout)
 
-        # Botão "OK"
         self.ok_button = QPushButton("OK", self)
         self.ok_button.setStyleSheet("""
             QPushButton {
-                background-color: rgba(0, 100, 0, 150); /* Verde com transparência */
+                background-color: rgba(0, 100, 0, 150);
                 color: white;
                 border: 1px solid rgba(0, 150, 0, 255);
                 border-radius: 5px;
                 padding: 5px 10px;
             }
-            QPushButton:hover {
-                background-color: rgba(0, 150, 0, 200);
-            }
+            QPushButton:hover { background-color: rgba(0, 150, 0, 200); }
         """)
         self.ok_button.clicked.connect(self.confirm_selection)
         layout.addWidget(self.ok_button)
 
-
-
     def populate_adapters(self, layout):
         adapters = self.get_network_adapters()
         if not adapters:
-            error_label = QLabel("Nenhum adaptador de rede disponível.")
-            error_label.setStyleSheet("color: white;")  # Texto branco
+            error_label = QLabel("Nenhum adaptador encontrado.")
+            error_label.setStyleSheet("color: white;")
             layout.addWidget(error_label)
             return
 
         for idx, (name, ip) in enumerate(adapters.items()):
-            radio_button = QRadioButton(f"{name} - {ip}")
-            radio_button.setStyleSheet("""
-                QRadioButton {
-                    color: white;
-                }
-                QRadioButton::indicator {
-                    width: 13px;
-                    height: 13px;
-                }
+            rb = QRadioButton(f"{name} - {ip}")
+            rb.setStyleSheet("""
+                QRadioButton { color: white; }
+                QRadioButton::indicator { width: 13px; height: 13px; }
                 QRadioButton::indicator:checked {
-                    background-color: rgba(0, 180, 0, 255);  /* Verde mais claro */
-                    border: 2px solid rgba(0, 100, 0, 255);  /* Borda verde escura */
+                    background-color: rgba(0, 180, 0, 255);
+                    border: 2px solid rgba(0, 100, 0, 255);
                 }
                 QRadioButton::indicator:unchecked {
-                    background-color: rgba(50, 50, 50, 100);  /* Cinza transparente */
+                    background-color: rgba(50, 50, 50, 100);
                     border: 2px solid rgba(100, 100, 100, 200);
                 }
-
             """)
-            self.button_group.addButton(radio_button, id=idx)
-            layout.addWidget(radio_button)
+            self.button_group.addButton(rb, id=idx)
+            layout.addWidget(rb)
 
     @staticmethod
     def get_network_adapters():
         adapters = {}
         for interface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
-                if addr.family == socket.AF_INET:  # Apenas IPv4
+                if addr.family == socket.AF_INET:
                     adapters[interface] = addr.address
         return adapters
 
     def confirm_selection(self):
         selected_button = self.button_group.checkedButton()
         if selected_button:
-            # Extrair apenas o endereço IP selecionado
             self.selected_adapter = selected_button.text().split(" - ")[1]
             self.accept()
         else:
-            QMessageBox.warning(self, "Erro", "Por favor, selecione um adaptador de rede.")
+            # --- Usar show_message para exibir o QMessageBox ---
+            self.show_message("Erro", "Por favor, selecione um adaptador de rede.", QMessageBox.Warning)
 
     def showEvent(self, event):
-        """Chamado quando a janela é exibida.  Aplica o efeito de blur."""
         super().showEvent(event)
         hwnd = int(self.winId())
-        enable_blur_effect(hwnd)  # Aplica o efeito de blur
+        enable_blur_effect(hwnd)
 
-    # --- Métodos para arrastar a janela (já que não tem barra de título) ---
     def mousePressEvent(self, event):
-        """Captura a posição inicial do mouse no clique."""
         if event.button() == Qt.LeftButton:
             self.oldPos = event.globalPos()
 
     def mouseMoveEvent(self, event):
-        """Move a janela se o botão esquerdo estiver pressionado."""
         if self.oldPos is not None and event.buttons() == Qt.LeftButton:
             delta = QPoint(event.globalPos() - self.oldPos)
             self.move(self.x() + delta.x(), self.y() + delta.y())
             self.oldPos = event.globalPos()
 
     def mouseReleaseEvent(self, event):
-        """Reseta a posição antiga quando o botão do mouse é solto."""
         if event.button() == Qt.LeftButton:
             self.oldPos = None
+
+    def show_message(self, title, message, icon):
+        """Função auxiliar para exibir QMessageBox personalizados."""
+        msg_box = QMessageBox(self)  # 'self' como pai
+        msg_box.setIcon(icon)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: rgba(0, 0, 0, 230); /* Preto translúcido */
+                color: white; /* Texto branco */
+            }
+            QLabel{
+                color: white; /* Garante texto branco na label */
+            }
+             QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 60px; /* Largura mínima para os botões */
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+
+        """)
+        msg_box.exec_()
 
 class VarreduraIPWindow(QDialog):
     def __init__(self, parent=None):
@@ -907,115 +913,216 @@ class iaThread(QThread):
 
 class ResetDialog(QDialog):
     def __init__(self, parent=None):
-        super(ResetDialog, self).__init__(parent)
+        super().__init__(parent)
+        self.oldPos = None
+        self.init_ui()
 
+    def init_ui(self):
         self.setWindowTitle("Opções de Reset")
-
-        # Define o tema verde escuro e fonte branca
-        palette = self.palette()
-        palette.setColor(QPalette.Window, QColor(0, 50, 0))  # Verde escuro
-        palette.setColor(QPalette.WindowText, Qt.white)  # Branco
-        self.setPalette(palette)
+        self.setGeometry(100, 100, 350, 200)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background:transparent;")
 
         layout = QVBoxLayout(self)
 
         label = QLabel("Selecione uma opção de reset:")
+        label.setStyleSheet("color: white; font-size: 14px;")
         layout.addWidget(label)
 
-        button_factory = QPushButton("Padrão de Fábrica")
-        button_factory.clicked.connect(self.padrao_fabrica)  # Conecta ao método padrao_fabrica
-        layout.addWidget(button_factory)
+        button_factory = QPushButton("Padrão de Fábrica", self)
+        button_reset = QPushButton("Reiniciar", self)
 
-        button_reset = QPushButton("Reiniciar") # Nome do botão alterado
-        button_reset.clicked.connect(self.reset)  # Conecta ao método reset
+        button_style = """
+            QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """
+        button_factory.setStyleSheet(button_style)
+        button_reset.setStyleSheet(button_style)
+
+        button_factory.clicked.connect(self.padrao_fabrica)
+        button_reset.clicked.connect(self.reset)
+        layout.addWidget(button_factory)
         layout.addWidget(button_reset)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        hwnd = int(self.winId())
+        enable_blur_effect(hwnd)
+        self.center()
+
+    def center(self):
+        if self.parentWidget():
+            parent_rect = self.parentWidget().geometry()
+            dialog_rect = self.geometry()
+            center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
+            center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
+            self.move(center_x, center_y)
+        else:
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if self.oldPos is not None and event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.oldPos)
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = None
+
     def padrao_fabrica(self):
-        # Lógica para o reset de fábrica (movida para dentro do diálogo)
-        ip, ok_ip = QInputDialog.getText(self, "Padrão de Fábrica", "Digite o IP do DVR:")
-
+        ip, ok_ip = self.get_input("Padrão de Fábrica", "Digite o IP do DVR:")
         if ok_ip and ip:
-            user, ok_user = QInputDialog.getText(self, "Padrão de Fábrica", "Digite o usuário do DVR:")
-
+            user, ok_user = self.get_input("Padrão de Fábrica", "Digite o usuário do DVR:")
             if ok_user and user:
-                password, ok_password = QInputDialog.getText(self, "Padrão de Fábrica", "Digite a senha do DVR:", QLineEdit.Password)
-
+                password, ok_password = self.get_input("Padrão de Fábrica", "Digite a senha do DVR:", password=True)
                 if ok_password and password:
                     driver = None
-
                     try:
                         url = f"http://{user}:{password}@{ip}/cgi-bin/magicBox.cgi?action=resetSystemEx&type=0"
-
                         chrome_options = Options()
                         chrome_options.add_argument("--headless")
                         chrome_options.add_argument("--disable-gpu")
                         chrome_options.add_argument("--no-sandbox")
-
                         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
                         driver.get(url)
 
                         if "OK" in driver.page_source:
-                            QMessageBox.information(self, "Sucesso", f"O DVR com IP {ip} foi resetado com sucesso!")
+                            self.show_message("Sucesso", f"O DVR com IP {ip} foi resetado com sucesso!", QMessageBox.Information)
                         else:
-                            QMessageBox.warning(self, "Falha", "Falha ao resetar o DVR. Verifique as credenciais e tente novamente.")
-
+                            self.show_message("Falha", "Falha ao resetar o DVR.", QMessageBox.Warning)
                     except Exception as e:
-                        QMessageBox.critical(self, "Erro", f"Erro ao acessar o DVR: {str(e)}")
+                         self.show_message("Erro", str(e), QMessageBox.Critical)
                     finally:
                         if driver:
                             driver.quit()
-                else:
-                    QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
-            else:
-                QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
-        else:
-            QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
-        self.accept()  # Fecha o diálogo após o reset (ou cancelamento)
 
     def reset(self):
-         # Lógica para o reset (usando o link de reboot)
-        ip, ok_ip = QInputDialog.getText(self, "Reiniciar", "Digite o IP do DVR:")
-
+        ip, ok_ip = self.get_input("Reiniciar", "Digite o IP do DVR:")
         if ok_ip and ip:
-            user, ok_user = QInputDialog.getText(self, "Reiniciar", "Digite o usuário do DVR:")
-
+            user, ok_user = self.get_input("Reiniciar", "Digite o usuário do DVR:")
             if ok_user and user:
-                password, ok_password = QInputDialog.getText(self, "Reiniciar", "Digite a senha do DVR:", QLineEdit.Password)
-
+                password, ok_password = self.get_input("Reiniciar", "Digite a senha do DVR:", password=True)
                 if ok_password and password:
                     driver = None
-
                     try:
-                        url = f"http://{user}:{password}@{ip}/cgi-bin/magicBox.cgi?action=reboot"  # URL de reboot
-
+                        url = f"http://{user}:{password}@{ip}/cgi-bin/magicBox.cgi?action=reboot"
                         chrome_options = Options()
                         chrome_options.add_argument("--headless")
                         chrome_options.add_argument("--disable-gpu")
                         chrome_options.add_argument("--no-sandbox")
-
                         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
                         driver.get(url)
 
-                        # A resposta do reboot pode variar, adaptamos para procurar um texto comum
-                        if "OK" in driver.page_source or "Success" in driver.page_source or "rebooting" in driver.page_source:  # Adapte conforme a resposta do seu DVR
-                            QMessageBox.information(self, "Sucesso", f"O DVR com IP {ip} foi reiniciado com sucesso!")
+                        if "OK" in driver.page_source or "Success" in driver.page_source or "rebooting" in driver.page_source:
+                            self.show_message("Sucesso", f"O DVR com IP {ip} foi reiniciado com sucesso!", QMessageBox.Information)
                         else:
-                           QMessageBox.warning(self, "Falha", f"Falha ao reiniciar o DVR. Resposta: {driver.page_source}. Verifique as credenciais e tente novamente.")
-
-
+                            self.show_message("Falha", f"Falha ao reiniciar o DVR. Resposta: {driver.page_source}", QMessageBox.Warning)
                     except Exception as e:
-                        QMessageBox.critical(self, "Erro", f"Erro ao acessar o DVR: {str(e)}")
+                        self.show_message("Erro", str(e), QMessageBox.Critical)
                     finally:
                         if driver:
                             driver.quit()
-                else:
-                    QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
-            else:
-                QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
-        else:
-            QMessageBox.information(self, "Cancelado", "A operação foi cancelada.")
-        self.accept()
 
+    def get_input(self, title, prompt, password=False):
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setLabelText(prompt)
+        dialog.setInputMode(QInputDialog.TextInput)
+        if password:
+            dialog.setTextEchoMode(QLineEdit.Password)
+
+        dialog.setStyleSheet("""
+            QInputDialog {
+                background-color: rgba(0, 50, 0, 200);
+                color: white;
+            }
+            QLabel {
+                color: white;
+            }
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 30);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 80);
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """)
+
+        ok = dialog.exec_()
+        text = dialog.textValue()
+        return text, ok
+
+    def show_message(self, title, message, icon):
+        """Função auxiliar para exibir QMessageBox personalizados."""
+        msg_box = QMessageBox(self)  # 'self' como pai
+        msg_box.setIcon(icon)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+
+        # --- Aplica estilo MANUALMENTE ao QMessageBox ---
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: rgba(0, 0, 0, 230); /* Preto translúcido */
+                color: white; /* Texto branco */
+            }
+            QLabel{
+                color: white; /* Garante texto branco na label */
+            }
+             QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 60px; /* Largura mínima para os botões */
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+
+        """)
+        msg_box.exec_()# --- (dentro de uma janela principal, se necessário) ---
+
+
+class MainWindow(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Janela Principal")
+        self.setGeometry(200, 200, 500, 400)
+        layout = QVBoxLayout(self)
+        self.button = QPushButton("Abrir ResetDialog", self)
+        self.button.clicked.connect(self.open_dialog)
+        layout.addWidget(self.button)
+
+    def open_dialog(self):
+        dialog = ResetDialog(self)
+        dialog.exec_()
 
 
 ### AQUI FICA A DEFINIÇÃO DA PARTE VISUAL DA JANELA PRINCIPAL

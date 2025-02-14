@@ -464,108 +464,117 @@ class AjudaDialog(QDialog):
             self.oldPos = None
 
 class RTSPDialog(QDialog):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.oldPos = None  # Para arrastar a janela
+        self.init_ui()
+
+    def init_ui(self):
         self.setWindowTitle("Configuração RTSP")
-        self.setGeometry(400, 400, 350, 250) # Aumentei um pouco a largura
+        self.setGeometry(400, 400, 350, 280)
 
-        # Estilo para o diálogo
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #004000; /* Verde escuro */
-                color: white;
-                font-family: 'Arial', sans-serif;
-            }
-            QLineEdit {
-                background-color: rgba(0, 0, 0, 50);
-                color: white;
-                border: 1px solid #008000;
-                border-radius: 3px;
-                padding: 5px;
-                selection-background-color: #71ff78;
-                selection-color: black;
-            }
-            QPushButton {
-                background-color: #006400;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 5px;
-                padding: 10px;
-            }
-            QPushButton:hover {
-                background-color: #008000;
-            }
-            QPushButton:pressed {
-                background-color: #00A000;
-            }
-            QLabel {
-                color: white;
-            }
-        """)
+        # --- Configuração para Blur e Janela Sem Borda ---
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background:transparent;")  # Importante!
 
+        # --- Layout e Widgets ---
         self.layout = QFormLayout(self)
-        self.layout.setSpacing(10) # Espaçamento entre as linhas
-        self.layout.setContentsMargins(10, 10, 10, 10) # Margens
+        self.layout.setSpacing(10)
+        self.layout.setContentsMargins(10, 10, 10, 10)
 
         self.usuario = QLineEdit(self)
         self.senha = QLineEdit(self)
         self.ip = QLineEdit(self)
         self.porta = QLineEdit(self)
+        self.canal = QLineEdit(self)
 
-        # Adicionando texto de sugestão (placeholder) nos campos
         self.usuario.setPlaceholderText("Padrão: admin")
         self.senha.setPlaceholderText("Padrão: @1234567")
         self.ip.setPlaceholderText("Digite o endereço IP do DVR")
         self.porta.setPlaceholderText("Digite a porta para RTSP - Padrão: 554")
+        self.canal.setPlaceholderText("Número do Canal (Padrão: 1)")
+
+        # --- Estilo para os QLineEdit (fonte branca e em negrito) ---
+        line_edit_style = """
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 30);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 80);
+                border-radius: 4px;
+                padding: 5px;
+                font-weight: bold; /* Negrito */
+            }
+        """
+        self.usuario.setStyleSheet(line_edit_style)
+        self.senha.setStyleSheet(line_edit_style)
+        self.ip.setStyleSheet(line_edit_style)
+        self.porta.setStyleSheet(line_edit_style)
+        self.canal.setStyleSheet(line_edit_style)
 
         self.layout.addRow("Usuário:", self.usuario)
         self.layout.addRow("Senha:", self.senha)
 
-        # Criar layout horizontal para o campo de IP e botão de varredura
         ip_layout = QHBoxLayout()
         ip_layout.addWidget(self.ip)
+        self.varredura_btn = QPushButton("🔍 Varredura", self)
 
-        # Botão para varredura de IP
-        self.varredura_btn = QPushButton("🔍 Varredura", self) # Adicionado ícone
+        # --- Estilo para os botões (fonte branca e em negrito) ---
+        button_style = """
+            QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                font-weight: bold; /* Negrito */
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """
+        self.varredura_btn.setStyleSheet(button_style)
         self.varredura_btn.clicked.connect(self.abrir_janela_varredura)
-        self.varredura_btn.setFixedWidth(100) # Largura fixa para o botão
+        self.varredura_btn.setFixedWidth(100)
         ip_layout.addWidget(self.varredura_btn)
-
         self.layout.addRow("IP:", ip_layout)
         self.layout.addRow("Porta:", self.porta)
+        self.layout.addRow("Canal:", self.canal)
 
-        # Botão para preencher os campos com valores padrão
         self.preencher_btn = QPushButton("Auto Preencher", self)
+        self.preencher_btn.setStyleSheet(button_style)
         self.preencher_btn.clicked.connect(self.preencher_campos)
         self.layout.addWidget(self.preencher_btn)
 
-        # Adicionando o QDialogButtonBox com botões OK e Cancelar
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
-
-        # Estilo para os botões OK e Cancelar
         self.button_box.setStyleSheet("""
             QDialogButtonBox QPushButton {
-                min-width: 80px; /* Largura mínima para os botões */
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 80px;
+                font-weight: bold; /* Negrito */
+            }
+            QDialogButtonBox QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
             }
         """)
-
         self.layout.addWidget(self.button_box)
 
-        self.setLayout(self.layout)
 
     def preencher_campos(self):
-        """Preenche os campos com valores padrão."""
         self.usuario.setText("admin")
         self.senha.setText("@1234567")
         self.porta.setText("554")
+        self.canal.setText("1")
 
     def abrir_janela_varredura(self):
-        """Abre uma janela para varredura de dispositivos na rede."""
         self.varredura_window = VarreduraIPWindow(self)
         self.varredura_window.show()
 
@@ -575,9 +584,32 @@ class RTSPDialog(QDialog):
             "senha": self.senha.text(),
             "ip": self.ip.text(),
             "porta": self.porta.text(),
+            "canal": self.canal.text() or "1",
         }
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        hwnd = int(self.winId())
+        enable_blur_effect(hwnd)
+        self.center()
 
+    def center(self):
+        if self.parentWidget():
+            parent_rect = self.parentWidget().geometry()
+            dialog_rect = self.geometry()
+            center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
+            center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
+            self.move(center_x, center_y)
+        else:
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:  self.oldPos = event.globalPos()
+    def mouseMoveEvent(self, event):
+        if self.oldPos is not None and event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.oldPos); self.move(self.x() + delta.x(), self.y() + delta.y()); self.oldPos = event.globalPos()
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton: self.oldPos = None           
 class PingThread(QThread):
     """Thread para realizar a varredura de IPs."""
 
@@ -1110,19 +1142,198 @@ class ResetDialog(QDialog):
         msg_box.exec_()# --- (dentro de uma janela principal, se necessário) ---
 
 
-class MainWindow(QDialog):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Janela Principal")
-        self.setGeometry(200, 200, 500, 400)
-        layout = QVBoxLayout(self)
-        self.button = QPushButton("Abrir ResetDialog", self)
-        self.button.clicked.connect(self.open_dialog)
-        layout.addWidget(self.button)
+class AtivarLogDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.oldPos = None
+        self.init_ui()
 
-    def open_dialog(self):
-        dialog = ResetDialog(self)
-        dialog.exec_()
+    def init_ui(self):
+        self.setWindowTitle("Ativar Log")
+        self.setGeometry(100, 100, 400, 250)
+
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background:transparent;")
+
+        layout = QFormLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        self.message_label = QLabel("""
+        Primeiramente, plugue o pendrive no gravador. O pendrive deve estar vázio.
+        O gravador irá reiniciar após preencher os campos e clicar em OK. 
+        Depois, verifique se foi criado no pendrive arquivos como: 
+        printf_001.txt, kmsg_xxxx.txt e UsbDebug.txt
+
+        Preencha os campos para ativar o log:""", self)
+        self.message_label.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
+        layout.addRow(self.message_label)
+
+        self.usuario_input = QLineEdit(self)
+        self.usuario_input.setPlaceholderText("Usuário")
+        layout.addRow("Usuário:", self.usuario_input)
+
+        self.senha_input = QLineEdit(self)
+        self.senha_input.setPlaceholderText("Senha")
+        self.senha_input.setEchoMode(QLineEdit.Password)
+        layout.addRow("Senha:", self.senha_input)
+
+        self.ip_input = QLineEdit(self)
+        self.ip_input.setPlaceholderText("Endereço IP")
+        layout.addRow("IP:", self.ip_input)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addRow(self.button_box)
+
+        self.set_styles()  # Aplica os estilos
+
+    def set_styles(self):
+        line_edit_style = """
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 30);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 80);
+                border-radius: 4px;
+                padding: 5px;
+                font-weight: bold;
+            }
+        """
+        self.usuario_input.setStyleSheet(line_edit_style)
+        self.senha_input.setStyleSheet(line_edit_style)
+        self.ip_input.setStyleSheet(line_edit_style)
+
+        self.button_box.setStyleSheet("""
+            QDialogButtonBox QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 70px;
+                font-weight: bold;
+            }
+            QDialogButtonBox QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        enable_blur_effect(int(self.winId()))
+        self.center()
+
+    def center(self):
+        if self.parentWidget():
+            parent_rect = self.parentWidget().geometry()
+            dialog_rect = self.geometry()
+            center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
+            center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
+            self.move(center_x, center_y)
+        else:
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if self.oldPos is not None and event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.oldPos)
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = None
+
+    def show_message(self, title, message, icon):
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(icon)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: rgba(0, 0, 0, 230);
+                color: white;
+            }
+            QLabel{
+                color: white;
+                font-weight: bold;
+            }
+             QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 60px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """)
+        msg_box.exec_()
+
+
+    def accept(self):
+        """Sobrescreve o método accept() para usar o Selenium."""
+        usuario = self.usuario_input.text()
+        senha = self.senha_input.text()
+        ip = self.ip_input.text()
+
+        if not all([usuario, senha, ip]):
+            self.show_message("Erro", "Preencha todos os campos.", QMessageBox.Warning)
+            return
+
+        # --- URL para ativar o log ---
+        url_config = f"http://{usuario}:{senha}@{ip}/cgi-bin/configManager.cgi?action=setConfig&InterimRDPrint.AlwaysEnable=true"
+        # --- URL para reiniciar (reboot) ---
+        url_reboot = f"http://{usuario}:{senha}@{ip}/cgi-bin/magicBox.cgi?action=reboot"
+
+        driver = None  # Inicializa o driver
+        try:
+            # --- Configuração do Selenium ---
+            chrome_options = Options()
+            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
+            # --- Primeiro Acesso: Ativar Log ---
+            driver.get(url_config)
+
+            if "OK" in driver.page_source:
+                self.show_message("Sucesso", "Log ativado com sucesso! Reiniciando...", QMessageBox.Information)
+
+                # --- Segundo Acesso: Reiniciar ---
+                driver.get(url_reboot)  # Acessa a URL de reboot *depois* de ativar o log
+
+                #Verifica resposta do reboot (adapte conforme necessário)
+                if "OK" in driver.page_source or "rebooting" in driver.page_source.lower():  # Verifica se a resposta contem OK ou rebooting
+                  self.show_message("Sucesso", "Dispositivo reiniciando...", QMessageBox.Information)
+                  super().accept() #Fecha após o sucesso
+                else:
+                   self.show_message("Aviso", "Dispositivo pode não ter reiniciado corretamente.", QMessageBox.Warning)
+                   super().accept() #Fecha, mesmo com aviso
+            else:
+                self.show_message("Falha", f"Resposta inesperada ao ativar log: {driver.page_source}", QMessageBox.Warning)
+
+        except Exception as e:
+            self.show_message("Erro", str(e), QMessageBox.Critical)
+
+        finally:
+            if driver:
+                driver.quit()
+
+
+
 
 
 ### AQUI FICA A DEFINIÇÃO DA PARTE VISUAL DA JANELA PRINCIPAL
@@ -1321,6 +1532,7 @@ class Pylau(QMainWindow):
         self.rtsp_button.clicked.connect(self.configurar_rtsp)
         self.check_ports_button.clicked.connect(self.abrir_port_checker_dialog)
         self.reset_button.clicked.connect(self.reset_dvr)
+        self.ativar_log_button.clicked.connect(self.ativar_log)
         self.encontrar_button.clicked.connect(self.encontrar)
         self.stop_button.clicked.connect(self.parar_servidores)
         self.alarm_button.clicked.connect(self.start_alarm)
@@ -1402,11 +1614,19 @@ class Pylau(QMainWindow):
         dialog = ResetDialog(self)
         dialog.exec_()  # Abre o diálogo e aguarda a interação do usuário
 
+    def ativar_log(self):
+        """Abre o diálogo para ativar o log."""
+        dialog = AtivarLogDialog(self)  # Passa 'self' como pai
+        dialog.exec_()
+
     def configurar_rtsp(self):
         dialog = RTSPDialog()
         if dialog.exec_() == QDialog.Accepted:
             config = dialog.get_rtsp_config()
-            rtsp_url = f"rtsp://{config['usuario']}:{config['senha']}@{config['ip']}:{config['porta']}/"
+            rtsp_url = (
+            f"rtsp://{config['usuario']}:{config['senha']}@{config['ip']}:{config['porta']}"
+            f"/cam/realmonitor?channel={config['canal']}&subtype=0"
+        )
 
             # Cria o thread de transmissão RTSP
             rtsp_stream_thread = RTSPStream(rtsp_url)

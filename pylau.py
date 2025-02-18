@@ -61,6 +61,92 @@ from NetSDK.SDK_Struct import (
 from sftpapp import SFTPApplication
 from tempo import TimeSyncDialog
 
+from PyQt5.QtWidgets import QPushButton
+from PyQt5.QtCore import QPointF, QVariantAnimation, QEasingCurve, Qt
+from PyQt5.QtGui import QPainter, QRadialGradient, QColor, QPen
+
+
+class RadialGlowButton(QPushButton):
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self.setMouseTracking(True)
+        self.hovered = False
+        self._mouse_pos = QPointF()  # Posição do mouse
+        # Ponto distante (fora da janela).  Use um valor grande.
+        self.distant_point = QPointF(10000, 10000)
+
+        # Animação para a intensidade do brilho
+        self.intensity_animation = QVariantAnimation(self)
+        self.intensity_animation.setDuration(200)
+        self.intensity_animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.intensity_animation.valueChanged.connect(self.update)
+
+        self.base_color = QColor(0, 0, 0, 150)
+        self.glow_color = QColor(50, 200, 50, 200)
+        self.border_color = QColor(133, 196, 120, 255)
+        self.text_color = Qt.white
+
+        self.max_glow_radius = 0.8
+        self.min_glow_radius = 0.0
+        self.current_glow_radius = self.min_glow_radius
+        self.glow_intensity = 0.7
+        self.current_intensity = 0.0  # Começa com intensidade 0
+
+    def enterEvent(self, event):
+        self.hovered = True
+        self.intensity_animation.setStartValue(self.current_intensity)
+        self.intensity_animation.setEndValue(self.glow_intensity)
+        self.intensity_animation.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.hovered = False
+        self.intensity_animation.setStartValue(self.current_intensity)
+        self.intensity_animation.setEndValue(0.0)  # Volta para intensidade 0
+        self.intensity_animation.start()
+        super().leaveEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.hovered:
+            self._mouse_pos = event.localPos()
+            self.update()
+        super().mouseMoveEvent(event)
+
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+
+        # --- Gradiente Radial ---
+        # Usa o ponto distante se o mouse não estiver sobre o botão.
+        gradient_center = self.distant_point if not self.hovered else self._mouse_pos
+        gradient_radius = min(rect.width(), rect.height()) / 0.2
+
+        gradient = QRadialGradient(gradient_center, gradient_radius)
+
+
+        # Calcula o raio baseado na intensidade
+        if self.intensity_animation.state() == QVariantAnimation.Running:
+            self.current_intensity = self.intensity_animation.currentValue()
+        current_radius = self.min_glow_radius + (self.max_glow_radius - self.min_glow_radius) * self.current_intensity
+
+        # Cores do gradiente
+        gradient.setColorAt(0, QColor(self.glow_color.red(), self.glow_color.green(), self.glow_color.blue(), int(self.glow_color.alpha()* self.current_intensity))) #Usa current_intensity
+
+        gradient.setColorAt(current_radius, QColor(self.glow_color.red(), self.glow_color.green(), self.glow_color.blue(), int(self.glow_color.alpha()* self.current_intensity)))
+        gradient.setColorAt(1, self.base_color)
+
+        painter.setBrush(gradient)
+        painter.setPen(QPen(self.border_color, 1))
+        painter.drawRoundedRect(rect, 10, 10)
+
+        # Desenha o texto
+        painter.setPen(self.text_color)
+        painter.setFont(self.font())
+        painter.drawText(rect, Qt.AlignCenter, self.text())
+
+        
 # Configuração do logger
 logger = logging.getLogger("SFTPServerLogger")
 logger.setLevel(logging.INFO)
@@ -294,16 +380,30 @@ class PortCheckerDialog(QDialog):
         if event.button() == Qt.LeftButton:
             self.oldPos = None
 
-class QTextEditLogger(logging.Handler):
-    def __init__(self, text_edit):
-        super().__init__()
-        self.text_edit = text_edit
-        self.setFormatter(formatter)
+class CustomFTPHandler(FTPHandler):
+    def __init__(self, *args, main_window=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.main_window = main_window  # Referência à janela principal
 
-    def emit(self, record):
-        msg = self.format(record)
-        self.text_edit.append(msg)
+    def on_connect(self):
+        """Chamado quando um cliente se conecta."""
+        ip = self.remote_ip
+        logger.info(f"Dispositivo conectado: {ip}")
 
+        # Posta o evento para a janela principal
+        if self.main_window:
+            QApplication.postEvent(self.main_window, ConnectionEvent(ip))
+
+    def on_disconnect(self):
+        """Chamado quando um cliente se desconecta."""
+        logger.info(f"Dispositivo desconectado: {self.remote_ip}")
+
+    def on_file_received(self, file):
+        """Chamado quando um arquivo é recebido."""
+        logger.info(f"Arquivo recebido: {file}")
+        if self.main_window:
+            # Posta um evento para a thread principal com o nome do arquivo
+            QApplication.postEvent(self.main_window, FileReceivedEvent(file))
 
 class FTPServerThread(QThread):
     def __init__(
@@ -313,24 +413,25 @@ class FTPServerThread(QThread):
         usuario="admin",
         senha="@1234567",
         diretorio="./FTP_RECEBIDO",
+        parent=None,  # Adicione um argumento parent
     ):
-        super().__init__()
-        self.host = host  # Usar o IP passado
+        super().__init__(parent)  # Passe o parent para o construtor da QThread
+        self.host = host
         self.porta = porta
         self.usuario = usuario
         self.senha = senha
         self.diretorio = diretorio
         self.server = None
 
+
     def run(self):
         if not os.path.exists(self.diretorio):
             os.makedirs(self.diretorio)
 
-        # Removido self.get_ipv4_address() para respeitar o IP selecionado
         authorizer = DummyAuthorizer()
         authorizer.add_user(self.usuario, self.senha, self.diretorio, perm="elradfmw")
 
-        handler = FTPHandler
+        handler = CustomFTPHandler  # Usa o handler customizado
         handler.authorizer = authorizer
 
         self.server = FTPServer((self.host, self.porta), handler)
@@ -351,7 +452,17 @@ class FTPServerThread(QThread):
             self.server.close_all()
             logger.info("Servidor FTP <span style='color: red;'>parado</span>")
             self.quit()
+            self.wait()  # Espera a thread terminar
 
+
+    def event(self, event):
+        """Lida com eventos customizados (como o de conexão)."""
+        if event.type() == 1000:  # Verifica o tipo do evento
+            dialog = AcrylicDialog(event.ip_address, parent=self.parent())  # Passa o parent
+            dialog.exec_()  # Mostra o diálogo
+            return True  # Indica que o evento foi tratado
+
+        return super().event(event)  # Chama o manipulador de eventos padrão
 
 class AjudaDialog(QDialog):
     def __init__(self, parent=None):
@@ -1333,6 +1444,249 @@ class AtivarLogDialog(QDialog):
                 driver.quit()
 
 
+class RTMPConfigDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.oldPos = None  # Para arrastar a janela
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Configurar RTMP")
+        self.setGeometry(100, 100, 450, 400)  # Ajuste o tamanho
+
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background:transparent;")
+
+        layout = QFormLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        self.message_label = QLabel("Preencha os campos para configurar o RTMP:", self)
+        self.message_label.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
+        layout.addRow(self.message_label)
+
+        self.usuario_input = QLineEdit(self)
+        self.usuario_input.setPlaceholderText("Usuário")
+        layout.addRow("Usuário:", self.usuario_input)
+
+        self.senha_input = QLineEdit(self)
+        self.senha_input.setPlaceholderText("Senha")
+        self.senha_input.setEchoMode(QLineEdit.Password)
+        layout.addRow("Senha:", self.senha_input)
+
+        self.ip_input = QLineEdit(self)
+        self.ip_input.setPlaceholderText("Endereço IP")
+        layout.addRow("IP:", self.ip_input)
+
+        self.enable_input = QLineEdit(self)
+        self.enable_input.setPlaceholderText("Enable (true/false)")
+        layout.addRow("Enable:", self.enable_input)
+
+        self.address_input = QLineEdit(self)
+        self.address_input.setPlaceholderText("RTMP Server Address")
+        layout.addRow("Address:", self.address_input)
+
+        self.port_input = QLineEdit(self)
+        self.port_input.setPlaceholderText("RTMP Server Port (ex: 1935)")
+        layout.addRow("Porta:", self.port_input)
+
+        self.custom_path_input = QLineEdit(self)
+        self.custom_path_input.setPlaceholderText("Custom Path (ex: live)")
+        layout.addRow("Custom Path:", self.custom_path_input)
+
+        self.stream_path_input = QLineEdit(self)
+        self.stream_path_input.setPlaceholderText("Stream Path Prefix (ex: liveStream)")
+        layout.addRow("Stream Path:", self.stream_path_input)
+
+        self.key_input = QLineEdit(self)  # Campo para a chave (opcional)
+        self.key_input.setPlaceholderText("Key (opcional)")
+        layout.addRow("Key:", self.key_input)
+
+
+        # Botões - Criar ANTES de chamar set_styles
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addRow(self.button_box)  # Adicionar ao layout ANTES de set_styles
+
+        self.set_styles()  # Aplica os estilos
+
+
+
+    def set_styles(self):
+        line_edit_style = """
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 30);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 80);
+                border-radius: 4px;
+                padding: 5px;
+                font-weight: bold;
+            }
+        """
+        button_style = """
+            QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """
+         # Aplica os estilos aos QLineEdit
+        self.usuario_input.setStyleSheet(line_edit_style)
+        self.senha_input.setStyleSheet(line_edit_style)
+        self.ip_input.setStyleSheet(line_edit_style)
+        self.enable_input.setStyleSheet(line_edit_style)
+        self.address_input.setStyleSheet(line_edit_style)
+        self.port_input.setStyleSheet(line_edit_style)
+        self.custom_path_input.setStyleSheet(line_edit_style)
+        self.stream_path_input.setStyleSheet(line_edit_style)
+        self.key_input.setStyleSheet(line_edit_style)  # Aplica estilo ao campo da chave
+
+
+        self.button_box.setStyleSheet("""
+            QDialogButtonBox QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 70px;
+                font-weight: bold;
+            }
+            QDialogButtonBox QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        enable_blur_effect(int(self.winId()))
+        self.center()
+
+    def center(self):
+        if self.parentWidget():
+            parent_rect = self.parentWidget().geometry()
+            dialog_rect = self.geometry()
+            center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
+            center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
+            self.move(center_x, center_y)
+        else:
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if self.oldPos is not None and event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.oldPos)
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = None
+
+
+    def show_message(self, title, message, icon):
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(icon)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: rgba(0, 0, 0, 230);
+                color: white;
+            }
+            QLabel{
+                color: white;
+                font-weight: bold;
+            }
+             QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 60px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """)
+        msg_box.exec_()
+
+    def accept(self):
+        """Sobrescreve o método accept() para usar o Selenium."""
+        usuario = self.usuario_input.text()
+        senha = self.senha_input.text()
+        ip = self.ip_input.text()
+        enable = self.enable_input.text().lower() == "true"  # Converte para booleano
+        address = self.address_input.text()
+        port = self.port_input.text()
+        custom_path = self.custom_path_input.text()
+        stream_path = self.stream_path_input.text()
+        key = self.key_input.text()  # Obtém o valor da chave
+
+        #Validação
+        if not all([usuario, senha, ip, address, port, custom_path, stream_path]): #key é opcional
+            self.show_message("Erro", "Preencha todos os campos obrigatórios.", QMessageBox.Warning)
+            return
+
+        try:  #Converte a porta para int
+          port_int = int(port)
+        except ValueError:
+          self.show_message("Erro", "A porta deve ser um número inteiro.", QMessageBox.Warning)
+          return
+
+        # --- Construção da URL ---
+        # Monta a URL base (sempre presente)
+        base_url = f"http://{usuario}:{senha}@{ip}/cgi-bin/configManager.cgi?action=setConfig"
+        # Adiciona os parâmetros, um por vez.  Isso é mais fácil de ler e manter.
+        url = base_url
+        url += f"&RTMP_NVR.Enable={str(enable).lower()}"  # Converte bool para string "true" ou "false"
+        url += f"&RTMP_NVR.Address={address}"
+        url += f"&RTMP_NVR.Port={port_int}"  # Usa a porta como inteiro
+        url += f"&RTMP_NVR.CustomPath={custom_path}"
+        url += f"&RTMP_NVR.StreamPath={stream_path}"
+        if key:  # Só adiciona a chave se ela tiver sido preenchida
+            url += f"&RTMP_NVR.Key={key}"
+
+
+
+        driver = None
+        try:
+            # --- Configuração do Selenium ---
+            chrome_options = Options()
+            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+            driver.get(url)
+
+            if "OK" in driver.page_source:
+                self.show_message("Sucesso", "Configurações RTMP aplicadas com sucesso!", QMessageBox.Information)
+                super().accept()
+            else:
+                self.show_message("Falha", f"Resposta inesperada: {driver.page_source}", QMessageBox.Warning)
+
+        except Exception as e:
+            self.show_message("Erro", str(e), QMessageBox.Critical)
+
+        finally:
+            if driver:
+                driver.quit()
 
 
 
@@ -1442,13 +1796,14 @@ class Pylau(QMainWindow):
 
         # Coluna da esquerda
         left_column_layout = QVBoxLayout()
-        self.start_ftp_button = QPushButton("📁 Iniciar Servidor FTP", self)
-        self.start_sftp_button = QPushButton("🔐 Iniciar Servidor SFTP", self)
-        self.rtsp_button = QPushButton("👀 RTSP", self)
-        self.rtmp_button = QPushButton("▶️ RTMP", self)
-        self.check_ports_button = QPushButton("🔍 Checar Portas", self)
-        self.ativar_log_button = QPushButton("📋 Ativar Log", self)
-        self.reset_button = QPushButton("⚙️Padrão de Fáb.", self)
+        # self.start_ftp_button = QPushButton("📁 Iniciar Servidor FTP", self)  # ANTIGO
+        self.start_ftp_button = RadialGlowButton("📁 Iniciar Servidor FTP", self)  # NOVO
+        self.start_sftp_button = RadialGlowButton("🔐 Iniciar Servidor SFTP", self)
+        self.rtsp_button = RadialGlowButton("👀 RTSP", self)
+        self.rtmp_button = RadialGlowButton("▶️ RTMP", self)
+        self.check_ports_button = RadialGlowButton("🔍 Checar Portas", self)
+        self.ativar_log_button = RadialGlowButton("📋 Ativar Log", self)
+        self.reset_button = RadialGlowButton("⚙️Padrão de Fáb.", self)
         left_column_layout.addWidget(self.start_ftp_button)
         left_column_layout.addWidget(self.start_sftp_button)
         left_column_layout.addWidget(self.rtsp_button)
@@ -1459,14 +1814,14 @@ class Pylau(QMainWindow):
 
         # Coluna da direita
         right_column_layout = QVBoxLayout()
-        self.encontrar_button = QPushButton("🎯 Encontrar", self)
-        self.stop_button = QPushButton("⛔ Parar", self)
-        self.ajuda_button = QPushButton("❓ Ajuda", self)
-        self.alarm_button = QPushButton("📢 Alarme", self)
-        self.snmp_button = QPushButton("🩺 SNMP", self)
-        self.time_sync_button = QPushButton("⏱ Time Sync", self)
+        self.encontrar_button = RadialGlowButton("🎯 Encontrar", self)
+        self.stop_button = RadialGlowButton("⛔ Parar", self)
+        self.ajuda_button = RadialGlowButton("❓ Ajuda", self)
+        self.alarm_button = RadialGlowButton("📢 Alarme", self)
+        self.snmp_button = RadialGlowButton("🩺 SNMP", self)
+        self.time_sync_button = RadialGlowButton("⏱ Time Sync", self)
         
-        self.ia_button = QPushButton("🤖 I.A", self)
+        self.ia_button = RadialGlowButton("🤖 I.A", self)
 
         right_column_layout.addWidget(self.encontrar_button)
         right_column_layout.addWidget(self.stop_button)
@@ -1530,6 +1885,7 @@ class Pylau(QMainWindow):
         self.start_ftp_button.clicked.connect(self.iniciar_ftp_server)
         self.start_sftp_button.clicked.connect(self.sftp)
         self.rtsp_button.clicked.connect(self.configurar_rtsp)
+        self.rtmp_button.clicked.connect(self.rtmp)
         self.check_ports_button.clicked.connect(self.abrir_port_checker_dialog)
         self.reset_button.clicked.connect(self.reset_dvr)
         self.ativar_log_button.clicked.connect(self.ativar_log)
@@ -1648,6 +2004,10 @@ class Pylau(QMainWindow):
 
         event.accept()  # Fecha a janela normalmente
 
+    def rtmp(self):
+        dialog = RTMPConfigDialog(self)  # Passa 'self' como pai
+        dialog.exec_()
+        
     def abrir_port_checker_dialog(self):
         dialog = PortCheckerDialog(self)
         if dialog.exec_() == QDialog.Accepted:

@@ -29,7 +29,7 @@ from PyQt5.QtCore import (
     QThread, QTimer, Qt, pyqtSignal, QPoint, QRect
 )
 from PyQt5.QtGui import (
-    QMovie, QImage, QPixmap, QIcon, QPalette, QColor
+    QMovie, QImage, QPixmap, QIcon, QPalette, QColor, QFont
 )
 
 # pyftpdlib - Agrupando imports
@@ -60,6 +60,8 @@ from NetSDK.SDK_Struct import (
 # módulos/classes
 from sftpapp import SFTPApplication
 from tempo import TimeSyncDialog
+from hunter import SearchDeviceWidget
+from alarme import StartListenWidget
 
 from PyQt5.QtWidgets import QPushButton
 from PyQt5.QtCore import QPointF, QVariantAnimation, QEasingCurve, Qt
@@ -1770,7 +1772,7 @@ class Pylau(QMainWindow):
             background: transparent;
             color: white;
             font-size: 11pt;
-            font-family: 'Impact';
+            font-family: 'System';
             font-weight: regular;
             selection-background-color: #71ff78;
             selection-color: black;
@@ -1923,10 +1925,8 @@ class Pylau(QMainWindow):
         super().resizeEvent(event)
 
     def start_alarm(self):
-        # Caminho relativo ao executável
-        script_path = os.path.join(os.path.dirname(__file__), "alarme.py")
-        self.alarm_thread = AlarmThread(script_path)
-        self.alarm_thread.start()
+        self.window_alarm = StartListenWidget()  # Armazena a instância como atributo
+        self.window_alarm.show()  # Exibe a janela
 
     def abrir_time_sync(self):
         """Abre o diálogo TimeSyncDialog."""
@@ -1934,9 +1934,9 @@ class Pylau(QMainWindow):
         dialog.exec_() 
 
     def encontrar(self):
-        script_path = os.path.join(os.path.dirname(__file__), "hunter.py")
-        self.encontrar_thread = encontrarThread(script_path)
-        self.encontrar_thread.start()
+        self.window_encontrar = SearchDeviceWidget()  # ✅ Armazena a referência na instância da classe
+        self.window_encontrar.show()
+
 
     def start_ia(self): # Função renomeada para refletir o uso
         # Diálogos para obter IP, usuário e senha
@@ -2054,6 +2054,21 @@ class Pylau(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+        # --- Estilo Global ---
+    app.setStyle("Fusion")  # Boa prática
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(0, 50, 0))
+    palette.setColor(QPalette.WindowText, Qt.white)
+    palette.setColor(QPalette.Button, QColor(0, 80, 0))
+    palette.setColor(QPalette.ButtonText, Qt.white)
+    palette.setColor(QPalette.Base, QColor(0, 30, 0))
+    palette.setColor(QPalette.Text, Qt.white)
+    palette.setColor(QPalette.Highlight, QColor(0, 120, 0))
+    palette.setColor(QPalette.HighlightedText, Qt.white)
+    font = QFont()
+    font.setBold(True)
+    app.setFont(font)
+    app.setPalette(palette)
     main_window = Pylau()
     main_window.show()
     sys.exit(app.exec_())

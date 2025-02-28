@@ -579,25 +579,25 @@ class AjudaDialog(QDialog):
 class RTSPDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.oldPos = None  # Para arrastar a janela
+        self.parent_window = parent
+        self.oldPos = None
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle("Configuração RTSP")
         self.setGeometry(400, 400, 350, 280)
 
-        # --- Configuração para Blur e Janela Sem Borda ---
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background:transparent;")  # Importante!
+        self.setStyleSheet("background:transparent;")
 
-        # --- Layout e Widgets ---
         self.layout = QFormLayout(self)
         self.layout.setSpacing(10)
         self.layout.setContentsMargins(10, 10, 10, 10)
 
         self.usuario = QLineEdit(self)
         self.senha = QLineEdit(self)
+        self.senha.setEchoMode(QLineEdit.Password)  # Esconder senha por padrão
         self.ip = QLineEdit(self)
         self.porta = QLineEdit(self)
         self.canal = QLineEdit(self)
@@ -608,7 +608,6 @@ class RTSPDialog(QDialog):
         self.porta.setPlaceholderText("Digite a porta para RTSP - Padrão: 554")
         self.canal.setPlaceholderText("Número do Canal (Padrão: 1)")
 
-        # --- Estilo para os QLineEdit (fonte branca e em negrito) ---
         line_edit_style = """
             QLineEdit {
                 background-color: rgba(255, 255, 255, 30);
@@ -616,7 +615,7 @@ class RTSPDialog(QDialog):
                 border: 1px solid rgba(255, 255, 255, 80);
                 border-radius: 4px;
                 padding: 5px;
-                font-weight: bold; /* Negrito */
+                font-weight: bold;
             }
         """
         self.usuario.setStyleSheet(line_edit_style)
@@ -632,7 +631,6 @@ class RTSPDialog(QDialog):
         ip_layout.addWidget(self.ip)
         self.varredura_btn = QPushButton("🔍 Varredura", self)
 
-        # --- Estilo para os botões (fonte branca e em negrito) ---
         button_style = """
             QPushButton {
                 background-color: rgba(0, 100, 0, 150);
@@ -640,7 +638,7 @@ class RTSPDialog(QDialog):
                 border: 1px solid rgba(0, 150, 0, 255);
                 border-radius: 5px;
                 padding: 5px 10px;
-                font-weight: bold; /* Negrito */
+                font-weight: bold;
             }
             QPushButton:hover {
                 background-color: rgba(0, 150, 0, 200);
@@ -659,6 +657,11 @@ class RTSPDialog(QDialog):
         self.preencher_btn.clicked.connect(self.preencher_campos)
         self.layout.addWidget(self.preencher_btn)
 
+        self.toggle_senha_btn = QPushButton("👁 Mostrar Senha", self)
+        self.toggle_senha_btn.setStyleSheet(button_style)
+        self.toggle_senha_btn.clicked.connect(self.toggle_senha)
+        self.layout.addWidget(self.toggle_senha_btn)
+
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
@@ -672,14 +675,13 @@ class RTSPDialog(QDialog):
                 border-radius: 5px;
                 padding: 5px 10px;
                 min-width: 80px;
-                font-weight: bold; /* Negrito */
+                font-weight: bold;
             }
             QDialogButtonBox QPushButton:hover {
                 background-color: rgba(0, 150, 0, 200);
             }
         """)
         self.layout.addWidget(self.button_box)
-
 
     def preencher_campos(self):
         self.usuario.setText("admin")
@@ -690,6 +692,14 @@ class RTSPDialog(QDialog):
     def abrir_janela_varredura(self):
         self.varredura_window = VarreduraIPWindow(self)
         self.varredura_window.show()
+
+    def toggle_senha(self):
+        if self.senha.echoMode() == QLineEdit.Password:
+            self.senha.setEchoMode(QLineEdit.Normal)
+            self.toggle_senha_btn.setText("👁 Ocultar Senha")
+        else:
+            self.senha.setEchoMode(QLineEdit.Password)
+            self.toggle_senha_btn.setText("👁 Mostrar Senha")
 
     def get_rtsp_config(self):
         return {
@@ -707,8 +717,8 @@ class RTSPDialog(QDialog):
         self.center()
 
     def center(self):
-        if self.parentWidget():
-            parent_rect = self.parentWidget().geometry()
+        if self.parent_window:
+            parent_rect = self.parent_window.geometry()
             dialog_rect = self.geometry()
             center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
             center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
@@ -716,13 +726,8 @@ class RTSPDialog(QDialog):
         else:
             screen = QApplication.primaryScreen().availableGeometry()
             self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:  self.oldPos = event.globalPos()
-    def mouseMoveEvent(self, event):
-        if self.oldPos is not None and event.buttons() == Qt.LeftButton:
-            delta = QPoint(event.globalPos() - self.oldPos); self.move(self.x() + delta.x(), self.y() + delta.y()); self.oldPos = event.globalPos()
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton: self.oldPos = None           
+
+         
 class PingThread(QThread):
     """Thread para realizar a varredura de IPs."""
 
@@ -1002,29 +1007,81 @@ class RTSPStream(QThread):
 class RTSPWindow(QWidget):
     def __init__(self, rtsp_stream_thread=None):
         super().__init__()
-        self.setWindowTitle("Stream RTSP")
-        self.setStyleSheet("background-color: #32CD32;")  ### COR DA JANELA
-        self.label = QLabel(self)
-        layout = QVBoxLayout(self)
+        
+        self.rtsp_stream_thread = rtsp_stream_thread
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("RTSP Stream")
+        self.setGeometry(200, 200, 640, 480)
+
+        self.label = QLabel("Conectando ao stream RTSP...", self)
+        self.label.setAlignment(Qt.AlignCenter)
+
+        # Botão para ativar a máscara de privacidade
+        self.btn_activate = QPushButton("Ativar Privacidade", self)
+        self.btn_activate.setStyleSheet("background-color: green; color: white; font-size: 14px;")
+        self.btn_activate.clicked.connect(self.activate_privacy_masking)
+
+        layout = QVBoxLayout()
         layout.addWidget(self.label)
+        layout.addWidget(self.btn_activate)
         self.setLayout(layout)
 
-        # Armazena o thread de stream RTSP na própria janela
-        self.rtsp_stream_thread = rtsp_stream_thread
-
-        # Configura o callback para atualizar o vídeo
         if self.rtsp_stream_thread:
-            self.rtsp_stream_thread.frame_received.connect(self.set_video_frame)
+            self.rtsp_stream_thread.frame_received.connect(self.update_frame)
+            self.rtsp_stream_thread.start()
 
-    def set_video_frame(self, pixmap):
-        self.label.setPixmap(pixmap)
-        self.adjustSize()  # Ajusta o tamanho da janela ao tamanho do vídeo
+    def update_frame(self, q_image):
+        """Atualiza a label com o frame do RTSP"""
+        if isinstance(q_image, QPixmap):
+            self.label.setPixmap(q_image)
+        else:
+            pixmap = QPixmap.fromImage(q_image)
+            self.label.setPixmap(pixmap)
+
+    def activate_privacy_masking(self):
+        """Ativa a máscara de privacidade usando Selenium"""
+        # Configuração do Selenium
+        options = Options()
+        options.add_argument("--headless")  # Executa o navegador sem interface gráfica, se necessário
+        options.add_argument("--disable-gpu")  # Evita possíveis erros no modo headless
+        options.add_argument("--no-sandbox")  # Recomendado para evitar restrições no Linux
+        options.add_argument("--disable-dev-shm-usage")  # Reduz o consumo de memória
+
+        # Configura o serviço do ChromeDriver usando o WebDriver Manager
+        service = Service(ChromeDriverManager().install())
+
+        # Inicializa o WebDriver com as opções e o serviço corretamente definidos
+        driver = webdriver.Chrome(service=service, options=options)
+
+
+
+        # Configurações do DVR
+        username = "admin"
+        password = "@1234567"
+        dvr_ip = "10.100.70.52"
+
+        url = (f"http://{username}:{password}@{dvr_ip}/cgi-bin/PrivacyMasking.cgi?action=setPrivacyMasking"
+               f"&channel=1&PrivacyMasking.Index=0&PrivacyMasking.Name=Privacidade%201"
+               f"&PrivacyMasking.Enable=1&PrivacyMasking.ShapeType=Rect"
+               f"&PrivacyMasking.Rect[0]=0&PrivacyMasking.Rect[1]=0"
+               f"&PrivacyMasking.Rect[2]=5000&PrivacyMasking.Rect[3]=5000&PrivacyMasking.Mosaic=16")
+
+        try:
+            driver.get(url)
+            time.sleep(2)
+            print("Privacidade ativada com sucesso!")
+        except Exception as e:
+            print(f"Erro ao ativar privacidade: {e}")
+        finally:
+            driver.quit()
 
     def closeEvent(self, event):
-        # Verifica se o thread de transmissão RTSP existe e está rodando
-        if self.rtsp_stream_thread is not None:
+        """Para a thread de stream RTSP ao fechar a janela"""
+        if self.rtsp_stream_thread and self.rtsp_stream_thread.isRunning():
             self.rtsp_stream_thread.stop()
-        event.accept()  # Fecha a janela normalmente
+        event.accept()
 
 
 class AlarmThread(QThread):
@@ -1482,28 +1539,28 @@ class RTMPConfigDialog(QDialog):
         layout.addRow("IP:", self.ip_input)
 
         self.enable_input = QLineEdit(self)
-        self.enable_input.setPlaceholderText("Enable (true/false)")
-        layout.addRow("Enable:", self.enable_input)
+        self.enable_input.setPlaceholderText("(true/false)")
+        layout.addRow("Habilitar:", self.enable_input)
 
         self.address_input = QLineEdit(self)
-        self.address_input.setPlaceholderText("RTMP Server Address")
-        layout.addRow("Address:", self.address_input)
+        self.address_input.setPlaceholderText("Endereço do Servidor RTMP")
+        layout.addRow("Endereço:", self.address_input)
 
         self.port_input = QLineEdit(self)
-        self.port_input.setPlaceholderText("RTMP Server Port (ex: 1935)")
+        self.port_input.setPlaceholderText("Porta do Servidor RTMP (ex: 1935)")
         layout.addRow("Porta:", self.port_input)
 
         self.custom_path_input = QLineEdit(self)
-        self.custom_path_input.setPlaceholderText("Custom Path (ex: live)")
-        layout.addRow("Custom Path:", self.custom_path_input)
+        self.custom_path_input.setPlaceholderText("Endereço (ex: rtmp://py...)")
+        layout.addRow("Endereço Personalizado:", self.custom_path_input)
 
         self.stream_path_input = QLineEdit(self)
-        self.stream_path_input.setPlaceholderText("Stream Path Prefix (ex: liveStream)")
-        layout.addRow("Stream Path:", self.stream_path_input)
+        self.stream_path_input.setPlaceholderText("Prefix (ex: liveStream)")
+        layout.addRow("Endereço da Transmissão:", self.stream_path_input)
 
         self.key_input = QLineEdit(self)  # Campo para a chave (opcional)
-        self.key_input.setPlaceholderText("Key (opcional)")
-        layout.addRow("Key:", self.key_input)
+        self.key_input.setPlaceholderText("Chave (opcional)")
+        layout.addRow("Chave/Token:", self.key_input)
 
 
         # Botões - Criar ANTES de chamar set_styles
@@ -1754,7 +1811,7 @@ class Pylau(QMainWindow):
         # Configurando o fundo com um GIF animado
         self.background_label = QLabel(self)
         self.background_label.setGeometry(self.rect())
-        gif_path = resource_path("ativo2.png")
+        gif_path = resource_path("teste.gif")
         self.movie = QMovie(gif_path)
         self.movie.setScaledSize(self.size())
         self.background_label.setMovie(self.movie)
@@ -1976,13 +2033,13 @@ class Pylau(QMainWindow):
         dialog.exec_()
 
     def configurar_rtsp(self):
-        dialog = RTSPDialog()
+        dialog = RTSPDialog(self)  # Passa 'self' como referência à janela principal
         if dialog.exec_() == QDialog.Accepted:
             config = dialog.get_rtsp_config()
             rtsp_url = (
-            f"rtsp://{config['usuario']}:{config['senha']}@{config['ip']}:{config['porta']}"
-            f"/cam/realmonitor?channel={config['canal']}&subtype=0"
-        )
+                f"rtsp://{config['usuario']}:{config['senha']}@{config['ip']}:{config['porta']}"
+                f"/cam/realmonitor?channel={config['canal']}&subtype=0"
+            )
 
             # Cria o thread de transmissão RTSP
             rtsp_stream_thread = RTSPStream(rtsp_url)
@@ -1992,8 +2049,9 @@ class Pylau(QMainWindow):
             self.rtsp_window.show()
 
             # Inicia o thread de transmissão
-            self.log_console.append("📺Abrindo transmissão")
+            self.log_console.append("📺 Abrindo transmissão")
             rtsp_stream_thread.start()
+
 
     # Método closeEvent ajustado na RTSPWindow
     def closeEvent(self, event):

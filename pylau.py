@@ -31,6 +31,14 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import (
     QMovie, QImage, QPixmap, QIcon, QPalette, QColor, QFont
 )
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QOpenGLWidget, QWidget, QLabel,
+    QPushButton, QVBoxLayout, QDialog
+)
+from PyQt5.QtGui import QOpenGLShader, QOpenGLShaderProgram, QPixmap
+from PyQt5.QtCore import QTimer, Qt
+from OpenGL.GL import *
+import math
 
 # pyftpdlib - Agrupando imports
 from pyftpdlib.authorizers import DummyAuthorizer
@@ -390,19 +398,19 @@ class CustomFTPHandler(FTPHandler):
     def on_connect(self):
         """Chamado quando um cliente se conecta."""
         ip = self.remote_ip
-        logger.info(f"Dispositivo conectado: {ip}")
-
+        logger.info(f"✅Dispositivo <span style='color: green;'>conectado</span>: {ip}")
+        #logger.info("Servidor FTP <span style='color: red;'>parado</span>")
         # Posta o evento para a janela principal
         if self.main_window:
             QApplication.postEvent(self.main_window, ConnectionEvent(ip))
 
     def on_disconnect(self):
         """Chamado quando um cliente se desconecta."""
-        logger.info(f"Dispositivo desconectado: {self.remote_ip}")
+        logger.info(f"⛔️Dispositivo <span style='color: red;'>desconectado</span>: {self.remote_ip}")
 
     def on_file_received(self, file):
         """Chamado quando um arquivo é recebido."""
-        logger.info(f"Arquivo recebido: {file}")
+        logger.info(f"✅📁Arquivo recebido: {file}")
         if self.main_window:
             # Posta um evento para a thread principal com o nome do arquivo
             QApplication.postEvent(self.main_window, FileReceivedEvent(file))
@@ -575,157 +583,6 @@ class AjudaDialog(QDialog):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.oldPos = None
-
-class RTSPDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent_window = parent
-        self.oldPos = None
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle("Configuração RTSP")
-        self.setGeometry(400, 400, 350, 280)
-
-        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background:transparent;")
-
-        self.layout = QFormLayout(self)
-        self.layout.setSpacing(10)
-        self.layout.setContentsMargins(10, 10, 10, 10)
-
-        self.usuario = QLineEdit(self)
-        self.senha = QLineEdit(self)
-        self.senha.setEchoMode(QLineEdit.Password)  # Esconder senha por padrão
-        self.ip = QLineEdit(self)
-        self.porta = QLineEdit(self)
-        self.canal = QLineEdit(self)
-
-        self.usuario.setPlaceholderText("Padrão: admin")
-        self.senha.setPlaceholderText("Padrão: @1234567")
-        self.ip.setPlaceholderText("Digite o endereço IP do DVR")
-        self.porta.setPlaceholderText("Digite a porta para RTSP - Padrão: 554")
-        self.canal.setPlaceholderText("Número do Canal (Padrão: 1)")
-
-        line_edit_style = """
-            QLineEdit {
-                background-color: rgba(255, 255, 255, 30);
-                color: white;
-                border: 1px solid rgba(255, 255, 255, 80);
-                border-radius: 4px;
-                padding: 5px;
-                font-weight: bold;
-            }
-        """
-        self.usuario.setStyleSheet(line_edit_style)
-        self.senha.setStyleSheet(line_edit_style)
-        self.ip.setStyleSheet(line_edit_style)
-        self.porta.setStyleSheet(line_edit_style)
-        self.canal.setStyleSheet(line_edit_style)
-
-        self.layout.addRow("Usuário:", self.usuario)
-        self.layout.addRow("Senha:", self.senha)
-
-        ip_layout = QHBoxLayout()
-        ip_layout.addWidget(self.ip)
-        self.varredura_btn = QPushButton("🔍 Varredura", self)
-
-        button_style = """
-            QPushButton {
-                background-color: rgba(0, 100, 0, 150);
-                color: white;
-                border: 1px solid rgba(0, 150, 0, 255);
-                border-radius: 5px;
-                padding: 5px 10px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: rgba(0, 150, 0, 200);
-            }
-        """
-        self.varredura_btn.setStyleSheet(button_style)
-        self.varredura_btn.clicked.connect(self.abrir_janela_varredura)
-        self.varredura_btn.setFixedWidth(100)
-        ip_layout.addWidget(self.varredura_btn)
-        self.layout.addRow("IP:", ip_layout)
-        self.layout.addRow("Porta:", self.porta)
-        self.layout.addRow("Canal:", self.canal)
-
-        self.preencher_btn = QPushButton("Auto Preencher", self)
-        self.preencher_btn.setStyleSheet(button_style)
-        self.preencher_btn.clicked.connect(self.preencher_campos)
-        self.layout.addWidget(self.preencher_btn)
-
-        self.toggle_senha_btn = QPushButton("👁 Mostrar Senha", self)
-        self.toggle_senha_btn.setStyleSheet(button_style)
-        self.toggle_senha_btn.clicked.connect(self.toggle_senha)
-        self.layout.addWidget(self.toggle_senha_btn)
-
-        self.button_box = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
-        )
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
-        self.button_box.setStyleSheet("""
-            QDialogButtonBox QPushButton {
-                background-color: rgba(0, 100, 0, 150);
-                color: white;
-                border: 1px solid rgba(0, 150, 0, 255);
-                border-radius: 5px;
-                padding: 5px 10px;
-                min-width: 80px;
-                font-weight: bold;
-            }
-            QDialogButtonBox QPushButton:hover {
-                background-color: rgba(0, 150, 0, 200);
-            }
-        """)
-        self.layout.addWidget(self.button_box)
-
-    def preencher_campos(self):
-        self.usuario.setText("admin")
-        self.senha.setText("@1234567")
-        self.porta.setText("554")
-        self.canal.setText("1")
-
-    def abrir_janela_varredura(self):
-        self.varredura_window = VarreduraIPWindow(self)
-        self.varredura_window.show()
-
-    def toggle_senha(self):
-        if self.senha.echoMode() == QLineEdit.Password:
-            self.senha.setEchoMode(QLineEdit.Normal)
-            self.toggle_senha_btn.setText("👁 Ocultar Senha")
-        else:
-            self.senha.setEchoMode(QLineEdit.Password)
-            self.toggle_senha_btn.setText("👁 Mostrar Senha")
-
-    def get_rtsp_config(self):
-        return {
-            "usuario": self.usuario.text(),
-            "senha": self.senha.text(),
-            "ip": self.ip.text(),
-            "porta": self.porta.text(),
-            "canal": self.canal.text() or "1",
-        }
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        hwnd = int(self.winId())
-        enable_blur_effect(hwnd)
-        self.center()
-
-    def center(self):
-        if self.parent_window:
-            parent_rect = self.parent_window.geometry()
-            dialog_rect = self.geometry()
-            center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
-            center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
-            self.move(center_x, center_y)
-        else:
-            screen = QApplication.primaryScreen().availableGeometry()
-            self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
 
          
 class PingThread(QThread):
@@ -965,6 +822,187 @@ class VarreduraIPWindow(QDialog):
         self.parent().ip.setText(ip_selecionado)
         self.close()
 
+### Classes do RTMP
+class RTSPDialog(QDialog):
+    def __init__(self, parent=None, initial_data=None):
+        super().__init__(parent)
+        self.parent_window = parent
+        self.oldPos = None
+        self.initial_data = initial_data or {}
+        self.init_ui()
+        self.load_initial_data()
+
+    def load_initial_data(self):
+        # Preenche os campos com dados iniciais se existirem
+        self.usuario.setText(self.initial_data.get("usuario", ""))
+        self.senha.setText(self.initial_data.get("senha", ""))
+        self.ip.setText(self.initial_data.get("ip", ""))
+        self.porta.setText(self.initial_data.get("porta", ""))
+        self.canal.setText(self.initial_data.get("canal", ""))
+
+    def init_ui(self):
+        self.setWindowTitle("Configuração RTSP")
+        self.setGeometry(400, 400, 350, 280)
+
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background:transparent;")
+
+        self.layout = QFormLayout(self)
+        self.layout.setSpacing(10)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+
+        self.usuario = QLineEdit(self)
+        self.senha = QLineEdit(self)
+        self.senha.setEchoMode(QLineEdit.Password)  # Esconder senha por padrão
+        self.ip = QLineEdit(self)
+        self.porta = QLineEdit(self)
+        self.canal = QLineEdit(self)
+
+        self.usuario.setPlaceholderText("Padrão: admin")
+        self.senha.setPlaceholderText("Padrão: @1234567")
+        self.ip.setPlaceholderText("Digite o endereço IP do DVR")
+        self.porta.setPlaceholderText("Digite a porta para RTSP - Padrão: 554")
+        self.canal.setPlaceholderText("Número do Canal (Padrão: 1)")
+
+        line_edit_style = """
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 30);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 80);
+                border-radius: 4px;
+                padding: 5px;
+                font-weight: bold;
+            }
+        """
+        self.usuario.setStyleSheet(line_edit_style)
+        self.senha.setStyleSheet(line_edit_style)
+        self.ip.setStyleSheet(line_edit_style)
+        self.porta.setStyleSheet(line_edit_style)
+        self.canal.setStyleSheet(line_edit_style)
+
+        self.layout.addRow("Usuário:", self.usuario)
+        self.layout.addRow("Senha:", self.senha)
+
+        ip_layout = QHBoxLayout()
+        ip_layout.addWidget(self.ip)
+        self.varredura_btn = QPushButton("🔍 Varredura", self)
+
+        button_style = """
+            QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """
+        self.varredura_btn.setStyleSheet(button_style)
+        self.varredura_btn.clicked.connect(self.abrir_janela_varredura)
+        self.varredura_btn.setFixedWidth(100)
+        ip_layout.addWidget(self.varredura_btn)
+        self.layout.addRow("IP:", ip_layout)
+        self.layout.addRow("Porta:", self.porta)
+        self.layout.addRow("Canal:", self.canal)
+
+        self.preencher_btn = QPushButton("Auto Preencher", self)
+        self.preencher_btn.setStyleSheet(button_style)
+        self.preencher_btn.clicked.connect(self.preencher_campos)
+        self.layout.addWidget(self.preencher_btn)
+
+        self.toggle_senha_btn = QPushButton("👁 Mostrar Senha", self)
+        self.toggle_senha_btn.setStyleSheet(button_style)
+        self.toggle_senha_btn.clicked.connect(self.toggle_senha)
+        self.layout.addWidget(self.toggle_senha_btn)
+
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        self.button_box.setStyleSheet("""
+            QDialogButtonBox QPushButton {
+                background-color: rgba(0, 100, 0, 150);
+                color: white;
+                border: 1px solid rgba(0, 150, 0, 255);
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 80px;
+                font-weight: bold;
+            }
+            QDialogButtonBox QPushButton:hover {
+                background-color: rgba(0, 150, 0, 200);
+            }
+        """)
+        self.layout.addWidget(self.button_box)
+
+    def preencher_campos(self):
+        self.usuario.setText("admin")
+        self.senha.setText("@1234567")
+        self.porta.setText("554")
+        self.canal.setText("1")
+
+    def abrir_janela_varredura(self):
+        self.varredura_window = VarreduraIPWindow(self)
+        self.varredura_window.show()
+
+    def toggle_senha(self):
+        if self.senha.echoMode() == QLineEdit.Password:
+            self.senha.setEchoMode(QLineEdit.Normal)
+            self.toggle_senha_btn.setText("👁 Ocultar Senha")
+        else:
+            self.senha.setEchoMode(QLineEdit.Password)
+            self.toggle_senha_btn.setText("👁 Mostrar Senha")
+
+    def get_rtsp_config(self):
+        return {
+            "usuario": self.usuario.text(),
+            "senha": self.senha.text(),
+            "ip": self.ip.text(),
+            "porta": self.porta.text(),
+            "canal": self.canal.text() or "1",
+        }
+
+    def accept(self):
+        # Coleta apenas os 3 campos essenciais
+        credentials = (
+            self.usuario.text() or "admin",
+            self.senha.text() or "@1234567",
+            self.ip.text()  # Apenas username, password e IP
+        )
+        
+        # Monta a URL com porta e canal separados
+        porta = self.porta.text() or "554"
+        canal = self.canal.text() or "1"
+        rtsp_url = f"rtsp://{credentials[0]}:{credentials[1]}@{credentials[2]}:{porta}/cam/realmonitor?channel={canal}&subtype=0"
+        
+        rtsp_stream_thread = RTSPStream(rtsp_url)
+        self.rtsp_window = RTSPWindow(rtsp_stream_thread, credentials)  # Passando as credenciais
+        self.rtsp_window.setAttribute(Qt.WA_DeleteOnClose, False)  # Impede que feche o app principal
+        self.rtsp_window.show()
+        super().accept()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        hwnd = int(self.winId())
+        enable_blur_effect(hwnd)
+        self.center()
+
+    def center(self):
+        if self.parent_window:
+            parent_rect = self.parent_window.geometry()
+            dialog_rect = self.geometry()
+            center_x = parent_rect.x() + (parent_rect.width() - dialog_rect.width()) // 2
+            center_y = parent_rect.y() + (parent_rect.height() - dialog_rect.height()) // 2
+            self.move(center_x, center_y)
+        else:
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
 
 class RTSPStream(QThread):
     frame_received = pyqtSignal(QPixmap)  # Sinal para enviar o frame para a janela
@@ -1003,86 +1041,320 @@ class RTSPStream(QThread):
         self.running = False
         self.wait()  # Espera o thread finalizar
 
+# Código do shader (ShaderWidget) para o Countdown do RTSP
+# -------------------------------------------------
+vertex_shader_source = """
+#version 330 core
+layout (location = 0) in vec2 position;
+out vec2 fragCoord;
+void main()
+{
+    fragCoord = position;
+    gl_Position = vec4(position, 0.0, 1.0);
+}
+"""
+
+fragment_shader_source = """
+#version 330 core
+uniform vec2 iResolution;
+uniform float iTime;
+out vec4 fragColor;
+
+float random(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+float movingNoise(vec2 uv) {
+    float noise = 0.0;
+    float scale = 0.02;
+    float timeOffset = sin(iTime * 0.5) * 0.02;
+    for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= 1; j++) {
+            noise += random(uv + vec2(i, j) * scale + timeOffset);
+        }
+    }
+    return noise / 9.0;
+}
+
+float lightBeam(vec2 coord, vec2 source, float intensity, float spread) {
+    float dist = length(coord - source);
+    float attenuation = exp(-dist * spread) * intensity;
+    float flicker = 0.5 + 0.5 * sin(iTime * 2.0);
+    return attenuation * flicker;
+}
+
+void main()
+{
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec3 backgroundColor = vec3(0.02, 0.04, 0.02);
+    vec2 lightSource = vec2(iResolution.x * 0.5, iResolution.y * 1.1);
+    float intensity = 1.0;
+    float spread = 0.004;
+    float beam = lightBeam(gl_FragCoord.xy, lightSource, intensity, spread);
+    vec3 lightEffect = vec3(0.1, 0.8, 0.3) * beam;
+    float noise = movingNoise(uv);
+    lightEffect *= mix(0.9, 1.1, noise);
+    fragColor = vec4(backgroundColor + lightEffect, 1.0);
+}
+"""
+
+class ShaderWidget(QOpenGLWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.start_time = time.time()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update)
+        self.timer.start(16)  # Aproximadamente 60 FPS
+
+    def initializeGL(self):
+        self.program = QOpenGLShaderProgram()
+        vertex_shader = QOpenGLShader(QOpenGLShader.Vertex)
+        vertex_shader.compileSourceCode(vertex_shader_source)
+        self.program.addShader(vertex_shader)
+        fragment_shader = QOpenGLShader(QOpenGLShader.Fragment)
+        fragment_shader.compileSourceCode(fragment_shader_source)
+        self.program.addShader(fragment_shader)
+        self.program.link()
+
+    def resizeGL(self, w, h):
+        glViewport(0, 0, w, h)
+
+    def paintGL(self):
+        glClear(GL_COLOR_BUFFER_BIT)
+        self.program.bind()
+        iResolution = self.program.uniformLocation("iResolution")
+        iTime = self.program.uniformLocation("iTime")
+        self.program.setUniformValue(iResolution, self.width(), self.height())
+        self.program.setUniformValue(iTime, float(time.time() - self.start_time))
+        glBegin(GL_TRIANGLES)
+        glVertex2f(-1, -1)
+        glVertex2f(3, -1)
+        glVertex2f(-1, 3)
+        glEnd()
+        self.program.release()
 
 class RTSPWindow(QWidget):
-    def __init__(self, rtsp_stream_thread=None):
+    def __init__(self, rtsp_stream_thread=None, credentials=None, parent_dialog=None):
         super().__init__()
-        
         self.rtsp_stream_thread = rtsp_stream_thread
+        self.credentials = credentials
+        self.parent_dialog = parent_dialog  # Guarda referência ao diálogo pai
+        self.video_received = False  # Flag para indicar se o vídeo já foi recebido
+        self.driver = None 
         self.init_ui()
+        self.start_countdown()
 
     def init_ui(self):
         self.setWindowTitle("RTSP Stream")
+        self.set_green_titlebar()
         self.setGeometry(200, 200, 640, 480)
 
+        # Label que exibirá os frames do stream
         self.label = QLabel("Conectando ao stream RTSP...", self)
         self.label.setAlignment(Qt.AlignCenter)
 
-        # Botão para ativar a máscara de privacidade
-        self.btn_activate = QPushButton("Ativar Privacidade", self)
+        # Botões de funcionalidades
+        self.btn_activate = QPushButton("Ativar Máscara", self)
         self.btn_activate.setStyleSheet("background-color: green; color: white; font-size: 14px;")
         self.btn_activate.clicked.connect(self.activate_privacy_masking)
+
+        self.btn_adjust_video = QPushButton("Ajustar Vídeo", self)
+        self.btn_adjust_video.setStyleSheet("background-color: blue; color: white; font-size: 14px;")
+        self.btn_adjust_video.clicked.connect(self.adjust_video_settings)
 
         layout = QVBoxLayout()
         layout.addWidget(self.label)
         layout.addWidget(self.btn_activate)
+        layout.addWidget(self.btn_adjust_video)
         self.setLayout(layout)
 
+        # Criação do overlay de carregamento
+        self.loading_overlay = QWidget(self)
+        self.loading_overlay.setGeometry(self.rect())
+        # Faz com que o overlay não capture eventos de mouse (para não atrapalhar os botões quando estiver visível)
+        self.loading_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+        # Adiciona o ShaderWidget como fundo do overlay
+        self.shader_widget = ShaderWidget(self.loading_overlay)
+        self.shader_widget.setGeometry(self.loading_overlay.rect())
+
+        # Label do contador (centralizado, fonte branca e grande)
+        self.countdown_label = QLabel("15", self.loading_overlay)
+        self.countdown_label.setStyleSheet("color: white; font-size: 72pt; background: transparent;")
+        self.countdown_label.setAlignment(Qt.AlignCenter)
+        self.countdown_label.setGeometry(self.loading_overlay.rect())
+        self.countdown_label.raise_()  # Garante que o contador fique visível sobre o shader
+
+        # Se houver thread de stream RTSP, conecta o sinal de frame recebido
         if self.rtsp_stream_thread:
             self.rtsp_stream_thread.frame_received.connect(self.update_frame)
             self.rtsp_stream_thread.start()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Atualiza o tamanho do overlay e de seus filhos em caso de redimensionamento
+        self.loading_overlay.setGeometry(self.rect())
+        self.shader_widget.setGeometry(self.loading_overlay.rect())
+        self.countdown_label.setGeometry(self.loading_overlay.rect())
+
+    def start_countdown(self):
+        self.countdown_time = 15  # Tempo inicial de 15 segundos
+        self.countdown_timer = QTimer(self)
+        self.countdown_timer.timeout.connect(self.update_countdown)
+        self.countdown_timer.start(1000)  # Atualiza a cada 1 segundo
+
+    def update_countdown(self):
+        if self.video_received:
+            self.countdown_timer.stop()
+            self.loading_overlay.hide()
+            return
+        self.countdown_time -= 1
+        if self.countdown_time <= 0:
+            self.countdown_timer.stop()
+            self.close()  # Fecha a janela se não houver transmissão
+        else:
+            self.countdown_label.setText(str(self.countdown_time))
+
     def update_frame(self, q_image):
-        """Atualiza a label com o frame do RTSP"""
+        """Atualiza a label com o frame do RTSP e esconde o overlay de carregamento."""
+        if not self.video_received:
+            self.video_received = True
+            self.loading_overlay.hide()
         if isinstance(q_image, QPixmap):
             self.label.setPixmap(q_image)
         else:
             pixmap = QPixmap.fromImage(q_image)
             self.label.setPixmap(pixmap)
-
+        
     def activate_privacy_masking(self):
         """Ativa a máscara de privacidade usando Selenium"""
-        # Configuração do Selenium
-        options = Options()
-        options.add_argument("--headless")  # Executa o navegador sem interface gráfica, se necessário
-        options.add_argument("--disable-gpu")  # Evita possíveis erros no modo headless
-        options.add_argument("--no-sandbox")  # Recomendado para evitar restrições no Linux
-        options.add_argument("--disable-dev-shm-usage")  # Reduz o consumo de memória
+        if self.credentials is None:
+            print("Credenciais não foram configuradas!")
+            return
+            
+        # Extrai as credenciais do diálogo
+        usuario, senha, ip = self.credentials
+        self._execute_api_request(
+            endpoint="cgi-bin/PrivacyMasking.cgi?action=setPrivacyMasking"
+                     "&channel=1&PrivacyMasking.Index=0&PrivacyMasking.Name=Privacidade%201"
+                     "&PrivacyMasking.Enable=1&PrivacyMasking.ShapeType=Rect"
+                     "&PrivacyMasking.Rect[0]=0&PrivacyMasking.Rect[1]=0"
+                     "&PrivacyMasking.Rect[2]=5000&PrivacyMasking.Rect[3]=5000&PrivacyMasking.Mosaic=16",
+            username=usuario,
+            password=senha,
+            dvr_ip=ip,
+            message="Privacidade ativada com sucesso!"
+        )
 
-        # Configura o serviço do ChromeDriver usando o WebDriver Manager
-        service = Service(ChromeDriverManager().install())
+    def adjust_video_settings(self):
+        """Ajusta brilho, saturação e contraste, depois restaura os valores originais."""
+        if self.credentials is None:
+            print("Credenciais não foram configuradas!")
+            return
 
-        # Inicializa o WebDriver com as opções e o serviço corretamente definidos
-        driver = webdriver.Chrome(service=service, options=options)
+        username, password, dvr_ip = self.credentials
 
+        if not self.credentials:
+            self.reopen_dialog()  # Reabre o diálogo se não houver credenciais
+        return
+        
+        # Primeira chamada
+        self._execute_api_request(
+            endpoint="cgi-bin/configManager.cgi?action=setConfig"
+                     "&VideoColor[0][0].Brightness=50"
+                     "&VideoColor[0][0].Saturation=0"
+                     "&VideoColor[0][0].Contrast=100",
+            username=usuario,
+            password=senha,
+            dvr_ip=ip,
+            message="Configurações de vídeo ajustadas!"
+        )
 
+        # Aguarda 5 segundos antes de restaurar
+        time.sleep(5)
 
-        # Configurações do DVR
-        username = "admin"
-        password = "@1234567"
-        dvr_ip = "10.100.70.52"
+        # Segunda chamada
+        self._execute_api_request(
+            endpoint="cgi-bin/configManager.cgi?action=setConfig"
+                     "&VideoColor[0][0].Brightness=50"
+                     "&VideoColor[0][0].Saturation=50"
+                     "&VideoColor[0][0].Contrast=50",
+            username=username,
+            password=password,
+            dvr_ip=dvr_ip,
+            message="Configurações de vídeo restauradas!"
+        )
 
-        url = (f"http://{username}:{password}@{dvr_ip}/cgi-bin/PrivacyMasking.cgi?action=setPrivacyMasking"
-               f"&channel=1&PrivacyMasking.Index=0&PrivacyMasking.Name=Privacidade%201"
-               f"&PrivacyMasking.Enable=1&PrivacyMasking.ShapeType=Rect"
-               f"&PrivacyMasking.Rect[0]=0&PrivacyMasking.Rect[1]=0"
-               f"&PrivacyMasking.Rect[2]=5000&PrivacyMasking.Rect[3]=5000&PrivacyMasking.Mosaic=16")
+    def _execute_api_request(self, endpoint, username, password, dvr_ip, message):
+        """Versão corrigida com parâmetros corretos"""
+        if not all([username, password, dvr_ip]):
+            print("Credenciais inválidas ou incompletas!")
+            return
 
         try:
-            driver.get(url)
-            time.sleep(2)
-            print("Privacidade ativada com sucesso!")
+            if not self.driver:
+                options = Options()
+                options.add_argument("--headless=new")
+                options.add_argument("--disable-gpu")
+                options.add_argument("--no-sandbox")
+                options.add_experimental_option("excludeSwitches", ["enable-logging"])
+                
+                service = Service(
+                    ChromeDriverManager().install(),
+                    service_log_path=os.devnull
+                )
+                
+                self.driver = webdriver.Chrome(
+                    service=service,
+                    options=options
+                )
+
+            url = f"http://{username}:{password}@{dvr_ip}/{endpoint}"
+            self.driver.get(url)
+            print(message)
+
         except Exception as e:
-            print(f"Erro ao ativar privacidade: {e}")
-        finally:
-            driver.quit()
+            print(f"Erro na API: {str(e)}")
+            self._reset_driver()
+
+    def _reset_driver(self):
+        """Reinicialização segura do driver"""
+        if self.driver:
+            try:
+                self.driver.quit()
+            except:
+                pass
+        self.driver = None
+
+    def set_green_titlebar(self):
+        hwnd = int(self.winId())
+        green_color = 0x014F04  # Verde
+        white_color = 0xFFFFFF  # Branco (cor do texto)
+
+        DWMWA_CAPTION_COLOR = 35
+        DWMWA_TEXT_COLOR = 36
+
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR,
+            ctypes.byref(ctypes.c_int(green_color)),
+            ctypes.sizeof(ctypes.c_int),
+        )
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TEXT_COLOR,
+            ctypes.byref(ctypes.c_int(white_color)),
+            ctypes.sizeof(ctypes.c_int),
+        )
 
     def closeEvent(self, event):
-        """Para a thread de stream RTSP ao fechar a janela"""
-        if self.rtsp_stream_thread and self.rtsp_stream_thread.isRunning():
+        """Fechamento seguro"""
+        if self.driver:
+            self._reset_driver()
+        if self.rtsp_stream_thread:
             self.rtsp_stream_thread.stop()
         event.accept()
-
+        self.deleteLater()  # Garante a destruição da janela
 
 class AlarmThread(QThread):
     def __init__(self, script_path):

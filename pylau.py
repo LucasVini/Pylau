@@ -75,6 +75,22 @@ from PyQt5.QtWidgets import QPushButton
 from PyQt5.QtCore import QPointF, QVariantAnimation, QEasingCurve, Qt
 from PyQt5.QtGui import QPainter, QRadialGradient, QColor, QPen
 
+from PyQt5.QtCore import QObject, QEvent
+
+class GlobalMouseFilter(QObject):
+    def __init__(self, shader_widget):
+        super().__init__()
+        self.shader_widget = shader_widget
+
+    def eventFilter(self, obj, event):
+        # Captura eventos de movimento do mouse
+        if event.type() == QEvent.MouseMove:
+            # Converte a posição global para a posição relativa ao shader
+            pos = self.shader_widget.mapFromGlobal(event.globalPos())
+            self.shader_widget.mouse_pos = pos
+            self.shader_widget.update()  # Atualiza o shader
+        return False  # Retorne False para não interromper o fluxo do evento
+
 
 class RadialGlowButton(QPushButton):
     def __init__(self, text, parent=None):
@@ -1005,6 +1021,7 @@ class RTSPDialog(QDialog):
 
 
 class RTSPStream(QThread):
+    app = QApplication(sys.argv) ## talvez remover essa linha
     frame_received = pyqtSignal(QPixmap)  # Sinal para enviar o frame para a janela
 
     def __init__(self, rtsp_url):
@@ -1057,44 +1074,40 @@ void main()
 fragment_shader_source = """
 #version 330 core
 uniform vec2 iResolution;
+uniform vec2 iMouse;
 uniform float iTime;
 out vec4 fragColor;
 
-float random(vec2 p) {
-    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+mat2 rotate2D(float r) {
+    return mat2(cos(r), sin(r), -sin(r), cos(r));
 }
 
-float movingNoise(vec2 uv) {
-    float noise = 0.0;
-    float scale = 0.02;
-    float timeOffset = sin(iTime * 0.5) * 0.02;
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            noise += random(uv + vec2(i, j) * scale + timeOffset);
-        }
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    vec3 col = vec3(0);
+    float t = iTime;
+
+    vec2 n = vec2(0), q;
+    vec2 N = vec2(0);
+    vec2 p = uv + sin(t * 0.1) / 10.;
+    float S = 10.;
+    mat2 m = rotate2D(1. - iMouse.x * 0.0001);
+
+    for (float j = 0.; j < 30.; j++) {
+        p *= m;
+        n *= m;
+        q = p * S + j + n + t;
+        n += sin(q);
+        N += cos(q) / S;
+        S *= 1.2;
     }
-    return noise / 9.0;
+
+    col = vec3(0.0, 1.0, 0.2) * pow((N.x + N.y + 0.2) + 0.005 / length(N), 2.1);
+    fragColor = vec4(col, 1.0);
 }
 
-float lightBeam(vec2 coord, vec2 source, float intensity, float spread) {
-    float dist = length(coord - source);
-    float attenuation = exp(-dist * spread) * intensity;
-    float flicker = 0.5 + 0.5 * sin(iTime * 2.0);
-    return attenuation * flicker;
-}
-
-void main()
-{
-    vec2 uv = gl_FragCoord.xy / iResolution.xy;
-    vec3 backgroundColor = vec3(0.02, 0.04, 0.02);
-    vec2 lightSource = vec2(iResolution.x * 0.5, iResolution.y * 1.1);
-    float intensity = 1.0;
-    float spread = 0.004;
-    float beam = lightBeam(gl_FragCoord.xy, lightSource, intensity, spread);
-    vec3 lightEffect = vec3(0.1, 0.8, 0.3) * beam;
-    float noise = movingNoise(uv);
-    lightEffect *= mix(0.9, 1.1, noise);
-    fragColor = vec4(backgroundColor + lightEffect, 1.0);
+void main() {
+    mainImage(fragColor, gl_FragCoord.xy);
 }
 """
 
@@ -1102,6 +1115,7 @@ class ShaderWidget(QOpenGLWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.start_time = time.time()
+        self.mouse_pos = QPoint(0, 0)
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)
         self.timer.start(16)  # Aproximadamente 60 FPS
@@ -1123,8 +1137,10 @@ class ShaderWidget(QOpenGLWidget):
         glClear(GL_COLOR_BUFFER_BIT)
         self.program.bind()
         iResolution = self.program.uniformLocation("iResolution")
+        iMouse = self.program.uniformLocation("iMouse")
         iTime = self.program.uniformLocation("iTime")
         self.program.setUniformValue(iResolution, self.width(), self.height())
+        self.program.setUniformValue(iMouse, float(self.mouse_pos.x()), float(self.height() - self.mouse_pos.y()))
         self.program.setUniformValue(iTime, float(time.time() - self.start_time))
         glBegin(GL_TRIANGLES)
         glVertex2f(-1, -1)
@@ -1133,6 +1149,10 @@ class ShaderWidget(QOpenGLWidget):
         glEnd()
         self.program.release()
 
+    def mouseMoveEvent(self, event):
+        self.mouse_pos = event.pos()
+        self.update()
+        
 class RTSPWindow(QWidget):
     def __init__(self, rtsp_stream_thread=None, credentials=None, parent_dialog=None):
         super().__init__()
@@ -2078,22 +2098,27 @@ class Pylau(QMainWindow):
         self.set_green_titlebar()
 
         # Impedir maximização e redimensionamento
-        self.setFixedSize(600, 600)
+        self.setGeometry(100, 100, 600, 600)
 
-        # Configurando o fundo com um GIF animado
-        self.background_label = QLabel(self)
-        self.background_label.setGeometry(self.rect())
-        gif_path = resource_path("teste.gif")
-        self.movie = QMovie(gif_path)
-        self.movie.setScaledSize(self.size())
-        self.background_label.setMovie(self.movie)
-        self.movie.start()
+        # Cria um único widget central que atuará como container de todos os elementos
+        central_widget = QWidget(self)
+        central_widget.setContentsMargins(0, 0, 0, 0)
+        self.setCentralWidget(central_widget)
 
-        # Layout principal
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
+        # Cria o shader widget e o posiciona para preencher todo o central_widget
+        self.shader_widget = ShaderWidget(central_widget)
+        self.shader_widget.setGeometry(central_widget.rect())
 
-        # Console de log
+        # Cria um container para a interface principal com fundo transparente
+        self.ui_container = QWidget(central_widget)
+        self.ui_container.setGeometry(central_widget.rect())
+        self.ui_container.setStyleSheet("background: transparent;")
+        
+        # Cria o layout principal da interface sobre o container transparente
+        main_layout = QVBoxLayout(self.ui_container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Adiciona o console de log
         self.log_console = QTextEdit(self)
         self.log_console.setReadOnly(True)
         self.log_console.setStyleSheet(
@@ -2105,30 +2130,20 @@ class Pylau(QMainWindow):
             font-weight: regular;
             selection-background-color: #71ff78;
             selection-color: black;
-        """
+            """
         )
-        layout.addWidget(self.log_console)
+        main_layout.addWidget(self.log_console)
 
         # Adiciona a QLabel para o stream RTSP
         self.rtsp_label = QLabel(self)
-        layout.addWidget(self.rtsp_label)
+        main_layout.addWidget(self.rtsp_label)
 
-        # Layout para os botões em colunas
+        # Layout para os botões
         button_layout = QHBoxLayout()
-
-        # Altera aparência do title bar (minimizar fechar)
-        self.setWindowFlags(
-            Qt.Window
-            | Qt.WindowTitleHint
-            | Qt.CustomizeWindowHint
-            | Qt.WindowMinimizeButtonHint
-            | Qt.WindowCloseButtonHint
-        )
-
-        # Coluna da esquerda
+        
+        # Configuração dos botões (colunas esquerda e direita)
         left_column_layout = QVBoxLayout()
-        # self.start_ftp_button = QPushButton("📁 Iniciar Servidor FTP", self)  # ANTIGO
-        self.start_ftp_button = RadialGlowButton("📁 Iniciar Servidor FTP", self)  # NOVO
+        self.start_ftp_button = RadialGlowButton("📁 Iniciar Servidor FTP", self)
         self.start_sftp_button = RadialGlowButton("🔐 Iniciar Servidor SFTP", self)
         self.rtsp_button = RadialGlowButton("👀 RTSP", self)
         self.rtmp_button = RadialGlowButton("▶️ RTMP", self)
@@ -2142,8 +2157,7 @@ class Pylau(QMainWindow):
         left_column_layout.addWidget(self.check_ports_button)
         left_column_layout.addWidget(self.reset_button)
         left_column_layout.addWidget(self.ativar_log_button)
-
-        # Coluna da direita
+        
         right_column_layout = QVBoxLayout()
         self.encontrar_button = RadialGlowButton("🎯 Encontrar", self)
         self.stop_button = RadialGlowButton("⛔ Parar", self)
@@ -2151,9 +2165,7 @@ class Pylau(QMainWindow):
         self.alarm_button = RadialGlowButton("📢 Alarme", self)
         self.snmp_button = RadialGlowButton("🩺 SNMP", self)
         self.time_sync_button = RadialGlowButton("⏱ Time Sync", self)
-        
         self.ia_button = RadialGlowButton("🤖 I.A", self)
-
         right_column_layout.addWidget(self.encontrar_button)
         right_column_layout.addWidget(self.stop_button)
         right_column_layout.addWidget(self.alarm_button)
@@ -2161,8 +2173,8 @@ class Pylau(QMainWindow):
         right_column_layout.addWidget(self.snmp_button)
         right_column_layout.addWidget(self.ia_button)
         right_column_layout.addWidget(self.ajuda_button)
-
-        # Adiciona transparência aos botões
+        
+        # Adiciona estilo e efeito de blur (se desejado) aos botões
         button_style = """
             QPushButton {
                 background-color: rgba(0, 0, 0, 150); 
@@ -2194,24 +2206,14 @@ class Pylau(QMainWindow):
             self.ativar_log_button,
         ]:
             button.setStyleSheet(button_style)
-
-            # Adiciona o efeito de blur no botão
             blur_effect = QGraphicsBlurEffect()
             blur_effect.setBlurRadius(0)
             button.setGraphicsEffect(blur_effect)
 
-        # Adiciona as colunas ao layout horizontal
         button_layout.addLayout(left_column_layout)
         button_layout.addLayout(right_column_layout)
-
-        # Adiciona o layout de botões ao layout principal
-        layout.addLayout(button_layout)
-
-        # Criação de um QWidget central
-        central_widget = QWidget(self)
-        central_widget.setLayout(layout)
-        self.setCentralWidget(central_widget)
-
+        main_layout.addLayout(button_layout)
+        
         # Conectar os botões às funções correspondentes
         self.start_ftp_button.clicked.connect(self.iniciar_ftp_server)
         self.start_sftp_button.clicked.connect(self.sftp)
@@ -2248,10 +2250,6 @@ class Pylau(QMainWindow):
             ctypes.sizeof(ctypes.c_int),
         )
 
-    def resizeEvent(self, event):
-        self.background_label.setGeometry(self.rect())
-        self.movie.setScaledSize(self.size())
-        super().resizeEvent(event)
 
     def start_alarm(self):
         self.window_alarm = StartListenWidget()  # Armazena a instância como atributo
@@ -2266,6 +2264,12 @@ class Pylau(QMainWindow):
         self.window_encontrar = SearchDeviceWidget()  # ✅ Armazena a referência na instância da classe
         self.window_encontrar.show()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.centralWidget():
+            rect = self.centralWidget().rect()
+            self.shader_widget.setGeometry(rect)
+            self.ui_container.setGeometry(rect)
 
     def start_ia(self): # Função renomeada para refletir o uso
         # Diálogos para obter IP, usuário e senha
@@ -2381,9 +2385,10 @@ class Pylau(QMainWindow):
         self.ajuda_dialog = AjudaDialog()
         self.ajuda_dialog.exec_()
 
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    window = Pylau()  # Usa o nome window
+    window.show()
         # --- Estilo Global ---
     app.setStyle("Fusion")  # Boa prática
     palette = QPalette()
@@ -2399,6 +2404,9 @@ if __name__ == "__main__":
     font.setBold(True)
     app.setFont(font)
     app.setPalette(palette)
-    main_window = Pylau()
-    main_window.show()
+
+ # instalando o filtro global de mouse para capturar os movimentos mesmo sobre outros widgets
+    mouse_filter = GlobalMouseFilter(window.shader_widget)
+    app.installEventFilter(mouse_filter)
+
     sys.exit(app.exec_())

@@ -4,6 +4,7 @@ import logging
 import socket
 import subprocess
 import ctypes
+import threading
 import time  # Usado em FTPServerThread e potencialmente em outros lugares
 
 # Módulos externos
@@ -76,7 +77,53 @@ from PyQt5.QtCore import QPointF, QVariantAnimation, QEasingCurve, Qt
 from PyQt5.QtGui import QPainter, QRadialGradient, QColor, QPen
 
 from PyQt5.QtCore import QObject, QEvent
+from urllib.parse import quote
 
+class DVRLoginDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("Ativar DVR via API")
+        self.setMinimumWidth(300)
+        self.setWindowModality(Qt.NonModal)  # Não modal
+        self.setWindowFlags(self.windowFlags() | Qt.Window)  # Permite desfocar
+
+        layout = QVBoxLayout(self)
+
+        self.ip_input = QLineEdit(self)
+        self.ip_input.setPlaceholderText("IP do DVR (ex: 10.100.21.137)")
+        layout.addWidget(QLabel("IP do DVR:"))
+        layout.addWidget(self.ip_input)
+
+        self.user_input = QLineEdit(self)
+        self.user_input.setText("admin")
+        layout.addWidget(QLabel("Usuário:"))
+        layout.addWidget(self.user_input)
+
+        self.pass_input = QLineEdit(self)
+        self.pass_input.setText("@1234567")
+        self.pass_input.setEchoMode(QLineEdit.Password)
+        layout.addWidget(QLabel("Senha:"))
+        layout.addWidget(self.pass_input)
+
+        self.btn_ok = QPushButton("Ativar")
+        self.btn_ok.clicked.connect(self.accept)
+        layout.addWidget(self.btn_ok)
+
+        self.btn_encontrar = QPushButton("Encontrar")
+        self.btn_encontrar.setStyleSheet("background-color: green; color: white;")
+        self.btn_encontrar.clicked.connect(self.encontrar)
+        layout.addWidget(self.btn_encontrar)
+
+    def get_data(self):
+        return self.ip_input.text(), self.user_input.text(), self.pass_input.text()
+
+    def encontrar(self):
+        self.window_encontrar = SearchDeviceWidget()
+        self.window_encontrar.setWindowModality(Qt.NonModal)
+        self.window_encontrar.setWindowFlags(self.window_encontrar.windowFlags() | Qt.Window)
+        self.window_encontrar.show()
+                        
 class GlobalMouseFilter(QObject):
     def __init__(self, shader_widget):
         super().__init__()
@@ -1074,44 +1121,60 @@ void main()
 fragment_shader_source = """
 #version 330 core
 uniform vec2 iResolution;
-uniform vec2 iMouse;
 uniform float iTime;
 out vec4 fragColor;
 
-mat2 rotate2D(float r) {
-    return mat2(cos(r), sin(r), -sin(r), cos(r));
+float random(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
-    vec3 col = vec3(0);
-    float t = iTime;
-
-    vec2 n = vec2(0), q;
-    vec2 N = vec2(0);
-    vec2 p = uv + sin(t * 0.1) / 10.;
-    float S = 10.;
-    mat2 m = rotate2D(1. - iMouse.x * 0.0001);
-
-    for (float j = 0.; j < 30.; j++) {
-        p *= m;
-        n *= m;
-        q = p * S + j + n + t;
-        n += sin(q);
-        N += cos(q) / S;
-        S *= 1.2;
+// Função de ruído com movimento dinâmico
+float movingNoise(vec2 uv) {
+    float noise = 0.0;
+    float scale = 0.02;
+    float timeOffset = sin(iTime * 0.5) * 0.02;
+    
+    for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= 1; j++) {
+            noise += random(uv + vec2(i, j) * scale + timeOffset);
+        }
     }
-
-    col = vec3(0.0, 1.0, 0.2) * pow((N.x + N.y + 0.2) + 0.005 / length(N), 2.1);
-    fragColor = vec4(col, 1.0);
+    return noise / 9.0;
 }
 
-void main() {
-    mainImage(fragColor, gl_FragCoord.xy);
+// Efeito de feixe de luz com variação no tempo
+float lightBeam(vec2 coord, vec2 source, float intensity, float spread) {
+    float dist = length(coord - source);
+    float attenuation = exp(-dist * spread) * intensity;
+    float flicker = 0.5 + 0.5 * sin(iTime * 2.0); // Oscilação suave da luz
+    return attenuation * flicker;
+}
+
+void main()
+{
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec3 backgroundColor = vec3(0.02, 0.04, 0.02); // Verde escuro
+    
+    // Fonte de luz centralizada no topo
+    vec2 lightSource = vec2(iResolution.x * 0.5, iResolution.y * 1.1);
+    
+    // Parâmetros da luz
+    float intensity = 1.0;
+    float spread = 0.004;
+    
+    // Feixe de luz dinâmico
+    float beam = lightBeam(gl_FragCoord.xy, lightSource, intensity, spread);
+    vec3 lightEffect = vec3(0.1, 0.8, 0.3) * beam; // Verde brilhante
+    
+    // Ruído dinâmico aplicado suavemente
+    float noise = movingNoise(uv);
+    lightEffect *= mix(0.9, 1.1, noise);
+    
+    fragColor = vec4(backgroundColor + lightEffect, 1.0);
 }
 """
 
-class ShaderWidget(QOpenGLWidget):
+class ShaderWidget(QOpenGLWidget):      ## para o qmainwindo
     def __init__(self, parent=None):
         super().__init__(parent)
         self.start_time = time.time()
@@ -2294,8 +2357,52 @@ class Pylau(QMainWindow):
         if dialog.exec_() == QDialog.Accepted and dialog.selected_adapter:
             ip_selecionado = dialog.selected_adapter
             logger.info(f"Adaptador de rede selecionado: {ip_selecionado}")
+
+            def configurar_dvr(ip_dvr, usuario, senha):
+                url = (
+                    f"http://{usuario}:{senha}@{ip_dvr}/cgi-bin/configManager.cgi"
+                    f"?action=setConfig&NAS[0].Name=FTP1&NAS[0].Enable=true"
+                    f"&NAS[0].Protocol=FTP&NAS[0].Address={ip_selecionado}"
+                    f"&NAS[0].Port=2222&NAS[0].UserName=admin&NAS[0].Password={senha}"
+                    f"&NAS[0].Directory=share"
+                )
+
+                def selenium_job():
+                    try:
+                        chrome_options = Options()
+                        chrome_options.add_argument("--headless")
+                        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+                        driver.get(url)
+                        time.sleep(5)
+                        if "sucesso" in driver.page_source.lower():
+                            logger.info("Configuração do FTP realizada com sucesso.")
+                        else:
+                            logger.warning("Configuração enviada, mas sem confirmação de sucesso.")
+                    except Exception as e:
+                        logger.error(f"Erro ao acessar a URL da API: {e}")
+                    finally:
+                        driver.quit()
+
+                threading.Thread(target=selenium_job, daemon=True).start()
+
+            resposta = QMessageBox.question(
+                self,
+                "Enviar Comando API",
+                "Deseja enviar o comando API para o DVR/NVR?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if resposta == QMessageBox.Yes:
+                self.login_dialog = DVRLoginDialog(self)
+                self.login_dialog.setWindowModality(Qt.NonModal)
+                self.login_dialog.accepted.connect(
+                    lambda: configurar_dvr(*self.login_dialog.get_data())
+                )
+                self.login_dialog.show()
+
+            # Inicia o servidor FTP
             if not self.ftp_server_thread:
-                # Usar o IP selecionado ao inicializar o servidor FTP
                 self.ftp_server_thread = FTPServerThread(host=ip_selecionado)
                 self.ftp_server_thread.start()
 
